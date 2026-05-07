@@ -1,0 +1,39 @@
+server:
+  port: 8080
+  serverlet:
+    context-path: /api # 服务器上下文路径
+
+spring:
+  application:
+    name: FAMS
+
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/fams?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+    username: root
+    password: wumengyun520.
+
+  redis:
+    host: 127.0.0.1
+    port: 6379
+    database: 0
+    timeout: 10s
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  global-config:
+    db-config:
+      id-type: auto
+      logic-delete-field: is_deleted # 全局逻辑删除的实体字段名
+      logic-delete-value: 1 # 逻辑已删除值
+      logic-not-delete-value: 0 # 逻辑未删除值
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl # mybatis日志
+    map-underscore-to-camel-case: true # 开启驼峰命名
+
+jwt:
+  secret: Zx1ngggAndWumengyunFAMS1919
+  expiration: 86400 # 24小时
+  token-header: Authorization
+  token-prefix: Bearer
+
