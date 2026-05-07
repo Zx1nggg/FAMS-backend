@@ -1,6 +1,6 @@
 server:
   port: 8080
-  serverlet:
+  servlet:
     context-path: /api # 服务器上下文路径
 
 spring:
@@ -32,8 +32,8 @@ mybatis-plus:
     map-underscore-to-camel-case: true # 开启驼峰命名
 
 jwt:
-  secret: Zx1ngggAndWumengyunFAMS1919
-  expiration: 86400 # 24小时
+  secret: Zx1ngggAndWumengyunFAMS2026MakeBySCAUIFeelGoodQBQBQB
+  expiration: 86400000 # 24小时
   token-header: Authorization
   token-prefix: Bearer
 

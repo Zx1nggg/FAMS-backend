@@ -13,11 +13,18 @@ public class Result<T> {
     private String msg;
     private T data;
 
-    public static <T> Result<T> sucess(T data) {
+    public static <T> Result<T> success(T data) {
         Result<T> result = new Result<>();
         result.code = 200;
         result.msg = "操作成功";
         result.data = data;
+        return result;
+    }
+
+    public static <T> Result<T> success() {
+        Result<T> result = new Result<>();
+        result.code = 200;
+        result.msg = "操作成功";
         return result;
     }
 
