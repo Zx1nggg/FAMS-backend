@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.Zx1nggg.FAMS.modules.lifecycle.mapper.HarvestRecordMapper">
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="com.Zx1nggg.FAMS.modules.temp.entity.HarvestRecord">
+        <id column="id" property="id" />
+        <result column="batch_no" property="batchNo" />
+        <result column="pond_id" property="pondId" />
+        <result column="harvest_date" property="harvestDate" />
+        <result column="predicted_weight_kg" property="predictedWeightKg" />
+        <result column="actual_total_weight_kg" property="actualTotalWeightKg" />
+        <result column="actual_avg_weight_g" property="actualAvgWeightG" />
+        <result column="buyer_name" property="buyerName" />
+        <result column="trace_qr_code_url" property="traceQrCodeUrl" />
+        <result column="trace_query_count" property="traceQueryCount" />
+        <result column="operator_id" property="operatorId" />
+        <result column="create_time" property="createTime" />
+    </resultMap>
+
+    <!-- 通用查询结果列 -->
+    <sql id="Base_Column_List">
+        id, batch_no, pond_id, harvest_date, predicted_weight_kg, actual_total_weight_kg, actual_avg_weight_g, buyer_name, trace_qr_code_url, trace_query_count, operator_id, create_time
+    </sql>
+
+</mapper>

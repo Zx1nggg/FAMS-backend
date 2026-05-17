@@ -1,27 +1,20 @@
 package com.Zx1nggg.FAMS.security.filter;
 
 import com.Zx1nggg.FAMS.common.exception.BusinessException;
-import com.Zx1nggg.FAMS.security.util.JwtUtils;
-import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.HandlerInterceptor;
 
+/**
+ * 此拦截器已不再负责 Token 解析鉴权（由 JwtAuthenticationFilter 统一处理），
+ * 仅作为请求属性校验的二次防线：
+ * - 检查 JwtAuthenticationFilter 是否已将用户信息注入到 request 属性中
+ * - 如果 JwtAuthenticationFilter 已做了认证，则直接放行
+ * - 否则拦截并返回 401 错误
+ */
 @Component
 public class JwtAuthenticationInterceptor implements HandlerInterceptor {
-
-    @Autowired
-    private JwtUtils jwtUtils;
-
-    @Value("${jwt.token-header:Authorization}")
-    private String tokenHeader;
-
-    @Value("${jwt.token-prefix:Bearer }")
-    private String tokenPrefix;
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
@@ -30,22 +23,13 @@ public class JwtAuthenticationInterceptor implements HandlerInterceptor {
             return true;
         }
 
-        String authHeader = request.getHeader(tokenHeader);
-
-        if (StringUtils.hasText(authHeader) && authHeader.startsWith(tokenPrefix)) {
-            String token = authHeader.substring(tokenPrefix.length());
-
-            if (jwtUtils.validateToken(token)) {
-                Claims claims = jwtUtils.getClaimsFromToken(token);
-                // 将解析出的用户信息挂载到 Request 上，后续 Controller 可直接取用
-                request.setAttribute("currentUserId", claims.get("userId"));
-                request.setAttribute("currentUserType", claims.get("userType"));
-                return true;
-            }
+        // 检查 Filter 是否已将用户信息注入到请求属性中
+        Object userId = request.getAttribute("currentUserId");
+        if (userId != null) {
+            return true; // Filter 已完成了认证，放行
         }
 
-        // 🌟 核心修改：直接抛出自定义业务异常，彻底抛弃 response.getWriter()
-        // 这个异常会精准飞向你的 GlobalExceptionHandler，并被包装成标准 Result 格式返回给前端！
+        // 如果 Filter 没有注入用户信息，说明请求未携带有效 Token
         throw new BusinessException(401, "Token已过期或非法，请重新登录");
     }
 }

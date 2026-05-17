@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(where mvn *)",
+      "Bash(mvn --version)"
+    ]
+  }
+}

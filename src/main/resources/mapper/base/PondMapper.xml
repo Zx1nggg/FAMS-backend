@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.Zx1nggg.FAMS.modules.base.mapper.PondMapper">
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="com.Zx1nggg.FAMS.modules.base.entity.Pond">
+        <id column="id" property="id" />
+        <result column="farm_id" property="farmId" />
+        <result column="pond_name" property="pondName" />
+        <result column="area_mu" property="areaMu" />
+    </resultMap>
+
+    <!-- 通用查询结果列 -->
+    <sql id="Base_Column_List">
+        id, farm_id, pond_name, area_mu
+    </sql>
+
+</mapper>

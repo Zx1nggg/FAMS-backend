@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.Zx1nggg.FAMS.modules.iot.mapper.IotSensorDataMapper">
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="com.Zx1nggg.FAMS.modules.iot.entity.IotSensorData">
+        <id column="id" property="id" />
+        <result column="pond_id" property="pondId" />
+        <result column="device_sn" property="deviceSn" />
+        <result column="water_temp" property="waterTemp" />
+        <result column="dissolved_oxygen" property="dissolvedOxygen" />
+        <result column="ph_value" property="phValue" />
+        <result column="collect_time" property="collectTime" />
+    </resultMap>
+
+    <!-- 通用查询结果列 -->
+    <sql id="Base_Column_List">
+        id, pond_id, device_sn, water_temp, dissolved_oxygen, ph_value, collect_time
+    </sql>
+
+</mapper>

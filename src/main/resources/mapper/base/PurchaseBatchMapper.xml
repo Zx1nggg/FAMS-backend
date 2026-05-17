@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.Zx1nggg.FAMS.modules.base.mapper.PurchaseBatchMapper">
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="com.Zx1nggg.FAMS.modules.base.entity.PurchaseBatch">
+        <id column="id" property="id" />
+        <result column="farm_id" property="farmId" />
+        <result column="batch_no" property="batchNo" />
+        <result column="supplier_id" property="supplierId" />
+        <result column="purchase_unit" property="purchaseUnit" />
+        <result column="unit_qty" property="unitQty" />
+        <result column="density_per_unit" property="densityPerUnit" />
+        <result column="estimated_total_qty" property="estimatedTotalQty" />
+        <result column="batch_status" property="batchStatus" />
+        <result column="quarantine_cert_no" property="quarantineCertNo" />
+        <result column="purchase_date" property="purchaseDate" />
+    </resultMap>
+
+    <!-- 通用查询结果列 -->
+    <sql id="Base_Column_List">
+        id, farm_id, batch_no, supplier_id, purchase_unit, unit_qty, density_per_unit, estimated_total_qty, batch_status, quarantine_cert_no, purchase_date
+    </sql>
+
+</mapper>

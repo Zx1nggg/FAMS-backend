@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.Zx1nggg.FAMS.modules.lifecycle.mapper.PondTaskMapper">
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="com.Zx1nggg.FAMS.modules.temp.entity.PondTask">
+        <id column="id" property="id" />
+        <result column="pond_id" property="pondId" />
+        <result column="batch_no" property="batchNo" />
+        <result column="task_type" property="taskType" />
+        <result column="task_desc" property="taskDesc" />
+        <result column="scheduled_date" property="scheduledDate" />
+        <result column="status" property="status" />
+        <result column="finish_time" property="finishTime" />
+        <result column="operator_id" property="operatorId" />
+        <result column="update_time" property="updateTime" />
+    </resultMap>
+
+    <!-- 通用查询结果列 -->
+    <sql id="Base_Column_List">
+        id, pond_id, batch_no, task_type, task_desc, scheduled_date, status, finish_time, operator_id, update_time
+    </sql>
+
+</mapper>

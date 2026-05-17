@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.Zx1nggg.FAMS.modules.log.mapper.AlarmRecordMapper">
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="com.Zx1nggg.FAMS.modules.temp.entity.AlarmRecord">
+        <id column="id" property="id" />
+        <result column="farm_id" property="farmId" />
+        <result column="alarm_level" property="alarmLevel" />
+        <result column="alarm_type" property="alarmType" />
+        <result column="alarm_content" property="alarmContent" />
+        <result column="is_handled" property="isHandled" />
+        <result column="handle_time" property="handleTime" />
+        <result column="create_time" property="createTime" />
+    </resultMap>
+
+    <!-- 通用查询结果列 -->
+    <sql id="Base_Column_List">
+        id, farm_id, alarm_level, alarm_type, alarm_content, is_handled, handle_time, create_time
+    </sql>
+
+</mapper>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.Zx1nggg.FAMS.modules.log.mapper.PondFeedLogMapper">
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="com.Zx1nggg.FAMS.modules.temp.entity.PondFeedLog">
+        <id column="id" property="id" />
+        <result column="pond_id" property="pondId" />
+        <result column="log_date" property="logDate" />
+        <result column="feed_brand" property="feedBrand" />
+        <result column="feed_amount" property="feedAmount" />
+        <result column="water_change_status" property="waterChangeStatus" />
+    </resultMap>
+
+    <!-- 通用查询结果列 -->
+    <sql id="Base_Column_List">
+        id, pond_id, log_date, feed_brand, feed_amount, water_change_status
+    </sql>
+
+</mapper>
