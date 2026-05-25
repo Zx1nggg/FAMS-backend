@@ -1,7 +1,9 @@
 package com.Zx1nggg.FAMS.security.filter;
 
 import com.Zx1nggg.FAMS.security.service.TokenBlacklistService;
+import com.Zx1nggg.FAMS.security.service.UserFarmCacheService;
 import com.Zx1nggg.FAMS.security.util.JwtUtils;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -11,6 +13,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -19,7 +22,9 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.Map;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -31,6 +36,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     @Autowired
     private TokenBlacklistService tokenBlacklistService;
+
+    @Autowired
+    private UserFarmCacheService userFarmCacheService;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
@@ -89,11 +99,40 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 // 将用户信息也设置到 request 属性中，供 Controller 或 Interceptor 使用
                 request.setAttribute("currentUserId", userId);
                 request.setAttribute("currentUserType", userType);
-                request.setAttribute("currentFarmId", farmId);
+
+                // 5. 校验 X-Current-Farm-Id（FARMER 专属，从 Redis 校验权限）
+                String headerFarmId = request.getHeader("X-Current-Farm-Id");
+                if ("FARMER".equals(userType) && StringUtils.hasText(headerFarmId)) {
+                    try {
+                        Long requestedFarmId = Long.valueOf(headerFarmId);
+                        if (!userFarmCacheService.isAuthorized(userId, requestedFarmId)) {
+                            log.warn("用户 {} 无权操作农场 {}，拒绝请求", userId, requestedFarmId);
+                            sendErrorResponse(response, HttpServletResponse.SC_FORBIDDEN,
+                                    403, "您没有该农场的操作权限");
+                            return;
+                        }
+                        request.setAttribute("currentFarmId", requestedFarmId);
+                    } catch (NumberFormatException e) {
+                        sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST,
+                                400, "X-Current-Farm-Id 格式错误");
+                        return;
+                    }
+                } else {
+                    request.setAttribute("currentFarmId", farmId);
+                }
             }
         }
 
-        // 5. 放行请求（后续由 Spring Security 根据 SecurityContext 决定是否拒绝）
+        // 6. 放行请求
         chain.doFilter(request, response);
+    }
+
+    private void sendErrorResponse(HttpServletResponse response, int httpStatus,
+                                    int code, String message) throws IOException {
+        response.setStatus(httpStatus);
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        Map<String, Object> body = Map.of("code", code, "message", message, "data", null);
+        response.getWriter().write(objectMapper.writeValueAsString(body));
     }
 }

@@ -3,7 +3,7 @@
 <mapper namespace="com.Zx1nggg.FAMS.modules.lifecycle.mapper.PondTaskMapper">
 
     <!-- 通用查询映射结果 -->
-    <resultMap id="BaseResultMap" type="com.Zx1nggg.FAMS.modules.temp.entity.PondTask">
+    <resultMap id="BaseResultMap" type="com.Zx1nggg.FAMS.modules.lifecycle.entity.PondTask">
         <id column="id" property="id" />
         <result column="pond_id" property="pondId" />
         <result column="batch_no" property="batchNo" />

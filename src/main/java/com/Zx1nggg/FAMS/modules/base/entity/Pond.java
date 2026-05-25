@@ -3,6 +3,7 @@ package com.Zx1nggg.FAMS.modules.base.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
@@ -52,4 +53,8 @@ public class Pond implements Serializable {
     @TableField("area_mu")
     @Schema(description = "面积(亩)")
     private BigDecimal areaMu;
+
+    @TableField("is_deleted")
+    @TableLogic
+    private Integer isDeleted;
 }

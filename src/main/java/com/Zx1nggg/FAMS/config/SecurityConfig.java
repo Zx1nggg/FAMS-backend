@@ -10,6 +10,8 @@ import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -19,8 +21,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-import org.springframework.web.filter.CorsFilter;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -54,7 +56,7 @@ public class SecurityConfig {
      * - 放行所有请求头和方法
      */
     @Bean
-    public CorsFilter corsFilter() {
+    public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowCredentials(true);
         config.addAllowedOriginPattern("*");
@@ -64,7 +66,7 @@ public class SecurityConfig {
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
-        return new CorsFilter(source);
+        return source;
     }
 
     // 配置 Security 过滤器链
@@ -76,19 +78,22 @@ public class SecurityConfig {
                 // 2. 基于 Token，禁用 Session
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 // 3. 启用 CORS
-                .cors(cors -> cors.configurationSource(request -> {
-                    CorsConfiguration config = new CorsConfiguration();
-                    config.setAllowCredentials(true);
-                    config.addAllowedOriginPattern("*");
-                    config.addAllowedHeader("*");
-                    config.addAllowedMethod("*");
-                    config.setMaxAge(3600L);
-                    return config;
-                }))
+                .cors(Customizer.withDefaults())
                 // 4. 请求授权（唯一放行登录接口，其余全部交由 JwtAuthenticationFilter + Interceptor 处理）
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/login", "/api/auth/login", "/auth/login").permitAll()
-                        .anyRequest().permitAll() // 不在此处拦截，鉴权由 Filter + Interceptor 负责
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers(
+                                "/auth/login",
+                                "/login",
+                                "/swagger-ui/**",
+                                "/swagger-ui.html",
+                                "/swagger-ui/index.html",
+                                "/v3/api-docs",
+                                "/v3/api-docs/**",
+                                "/v3/api-docs.yaml",
+                                "/doc.html"
+                        ).permitAll()
+                        .anyRequest().authenticated()
                 )
                 // 5. 自定义认证失败 / 权限不足的 JSON 响应
                 .exceptionHandling(ex -> ex

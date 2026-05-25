@@ -3,7 +3,7 @@
 <mapper namespace="com.Zx1nggg.FAMS.modules.lifecycle.mapper.BatchGrowthLogMapper">
 
     <!-- 通用查询映射结果 -->
-    <resultMap id="BaseResultMap" type="com.Zx1nggg.FAMS.modules.temp.entity.BatchGrowthLog">
+    <resultMap id="BaseResultMap" type="com.Zx1nggg.FAMS.modules.lifecycle.entity.BatchGrowthLog">
         <id column="id" property="id" />
         <result column="batch_no" property="batchNo" />
         <result column="pond_id" property="pondId" />

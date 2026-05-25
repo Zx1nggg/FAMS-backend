@@ -3,7 +3,7 @@
 <mapper namespace="com.Zx1nggg.FAMS.modules.log.mapper.PondFeedLogMapper">
 
     <!-- 通用查询映射结果 -->
-    <resultMap id="BaseResultMap" type="com.Zx1nggg.FAMS.modules.temp.entity.PondFeedLog">
+    <resultMap id="BaseResultMap" type="com.Zx1nggg.FAMS.modules.log.entity.PondFeedLog">
         <id column="id" property="id" />
         <result column="pond_id" property="pondId" />
         <result column="log_date" property="logDate" />

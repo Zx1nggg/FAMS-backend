@@ -4,7 +4,6 @@ package com.Zx1nggg.FAMS.config;
 import com.Zx1nggg.FAMS.security.filter.JwtAuthenticationInterceptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
@@ -22,18 +21,13 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/auth/login",             // 放行登录接口
                         "/error",                 // 放行错误流转
                         "/swagger-ui/**",         // 放行可能存在的接口文档
-                        "/v3/api-docs/**"
+                        "/swagger-ui.html",
+                        "/swagger-ui/index.html",
+                        "/v3/api-docs",
+                        "/v3/api-docs/**",
+                        "/v3/api-docs.yaml"
                 );
     }
 
-    // 跨域配置，防止前端联调报错
-    @Override
-    public void addCorsMappings(CorsRegistry registry) {
-        registry.addMapping("/**")
-                .allowedOriginPatterns("*")
-                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-                .allowedHeaders("*")
-                .allowCredentials(true)
-                .maxAge(3600);
-    }
+    // CORS 由 Spring Security 统一处理，避免与 SecurityConfig 中的 cors() 冲突
 }

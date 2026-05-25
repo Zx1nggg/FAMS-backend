@@ -3,14 +3,10 @@ package com.Zx1nggg.FAMS.modules.system.service;
 import com.Zx1nggg.FAMS.modules.system.entity.DictData;
 import com.baomidou.mybatisplus.extension.service.IService;
 
-/**
- * <p>
- * 通用字典数据表 服务类
- * </p>
- *
- * @author Zx1nggg
- * @since 2026-05-12
- */
+import java.util.List;
+
 public interface IDictDataService extends IService<DictData> {
 
+    /** 根据字典类型查询所有启用的字典项 */
+    List<DictData> listByDictType(String dictType);
 }

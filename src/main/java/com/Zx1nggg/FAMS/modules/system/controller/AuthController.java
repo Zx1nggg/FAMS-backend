@@ -4,6 +4,7 @@ package com.Zx1nggg.FAMS.modules.system.controller;
 import com.Zx1nggg.FAMS.common.api.Result;
 import com.Zx1nggg.FAMS.security.entity.LoginUser;
 import com.Zx1nggg.FAMS.security.service.TokenBlacklistService;
+import com.Zx1nggg.FAMS.security.service.UserFarmCacheService;
 import com.Zx1nggg.FAMS.security.util.JwtUtils;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
@@ -29,6 +30,9 @@ public class AuthController {
 
     @Autowired
     private TokenBlacklistService tokenBlacklistService;
+
+    @Autowired
+    private UserFarmCacheService userFarmCacheService;
 
     /**
      * 从请求中提取 Token 的通用方法（兼容 Cookie 和 Header）
@@ -79,14 +83,19 @@ public class AuthController {
                 loginUser.getUser().getFarmId() // 传入农场ID
         );
 
-        // 4. 将 Token 写入 HttpOnly Cookie
+        // 4. 将用户的农场权限列表缓存到 Redis（FARMER 专属）
+        if ("FARMER".equals(loginUser.getUser().getUserType())) {
+            userFarmCacheService.cacheUserFarms(loginUser.getUser().getId());
+        }
+
+        // 5. 将 Token 写入 HttpOnly Cookie
         Cookie cookie = new Cookie("aqua_token", token);
         cookie.setHttpOnly(true); // 绝对禁止 JavaScript 读取！防 XSS
         cookie.setPath("/");      // 整个系统路径有效
         cookie.setMaxAge(24 * 60 * 60); // 设置 Cookie 过期时间为 24 小时
         response.addCookie(cookie);
 
-        // 5. 返回前端数据
+        // 6. 返回前端数据
         Map<String, Object> data = new HashMap<>();
         Map<String, Object> userInfo = new HashMap<>();
         userInfo.put("name", loginUser.getUser().getRealName());
