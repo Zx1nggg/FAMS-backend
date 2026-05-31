@@ -15,6 +15,9 @@ public class PurchaseBatchDTO {
     @NotNull(message = "供应商不能为空")
     private Long supplierId;
 
+    @NotNull(message = "苗种品种不能为空")
+    private Long seedlingId;
+
     private String purchaseUnit;
 
     private Integer unitQty;

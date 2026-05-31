@@ -54,6 +54,13 @@ public class PurchaseBatch implements Serializable {
     private Long supplierId;
 
     /**
+     * 苗种品种，关联 t_seedling_dict.id
+     */
+    @TableField("seedling_id")
+    @Schema(description = "苗种品种，关联 t_seedling_dict.id")
+    private Long seedlingId;
+
+    /**
      * 采购包装单位 (如: 袋, 箱)
      */
     @TableField("purchase_unit")

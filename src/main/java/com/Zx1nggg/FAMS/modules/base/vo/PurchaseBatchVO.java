@@ -11,6 +11,8 @@ public class PurchaseBatchVO {
     private String batchNo;
     private Long supplierId;
     private String supplierName;
+    private Long seedlingId;
+    private String seedlingName;
     private String purchaseUnit;
     private Integer unitQty;
     private Integer densityPerUnit;

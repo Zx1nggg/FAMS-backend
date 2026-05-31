@@ -3,8 +3,10 @@ package com.Zx1nggg.FAMS.modules.base.service.impl;
 import com.Zx1nggg.FAMS.common.exception.BusinessException;
 import com.Zx1nggg.FAMS.modules.base.dto.PurchaseBatchDTO;
 import com.Zx1nggg.FAMS.modules.base.entity.PurchaseBatch;
+import com.Zx1nggg.FAMS.modules.base.entity.SeedlingDict;
 import com.Zx1nggg.FAMS.modules.base.entity.Supplier;
 import com.Zx1nggg.FAMS.modules.base.mapper.PurchaseBatchMapper;
+import com.Zx1nggg.FAMS.modules.base.mapper.SeedlingDictMapper;
 import com.Zx1nggg.FAMS.modules.base.mapper.SupplierMapper;
 import com.Zx1nggg.FAMS.modules.base.service.IPurchaseBatchService;
 import com.Zx1nggg.FAMS.modules.base.vo.PurchaseBatchVO;
@@ -26,6 +28,9 @@ public class PurchaseBatchServiceImpl extends ServiceImpl<PurchaseBatchMapper, P
 
     @Resource
     private SupplierMapper supplierMapper;
+
+    @Resource
+    private SeedlingDictMapper seedlingDictMapper;
 
     private static final String BATCH_NO_PREFIX = "BN";
 
@@ -105,6 +110,12 @@ public class PurchaseBatchServiceImpl extends ServiceImpl<PurchaseBatchMapper, P
             Supplier supplier = supplierMapper.selectById(batch.getSupplierId());
             if (supplier != null) {
                 vo.setSupplierName(supplier.getSupplierName());
+            }
+        }
+        if (batch.getSeedlingId() != null) {
+            SeedlingDict seedling = seedlingDictMapper.selectById(batch.getSeedlingId());
+            if (seedling != null) {
+                vo.setSeedlingName(seedling.getCategoryName());
             }
         }
         return vo;
