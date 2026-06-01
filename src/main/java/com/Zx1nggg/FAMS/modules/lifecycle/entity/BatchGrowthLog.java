@@ -34,6 +34,13 @@ public class BatchGrowthLog implements Serializable {
     private Long id;
 
     /**
+     * 关联巡塘记录ID
+     */
+    @TableField("patrol_log_id")
+    @Schema(description = "关联巡塘记录ID")
+    private Long patrolLogId;
+
+    /**
      * 针对哪个批次
      */
     @TableField("batch_no")

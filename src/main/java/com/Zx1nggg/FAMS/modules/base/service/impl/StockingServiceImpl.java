@@ -4,6 +4,7 @@ import com.Zx1nggg.FAMS.common.exception.BusinessException;
 import com.Zx1nggg.FAMS.modules.base.dto.StockingDTO;
 import com.Zx1nggg.FAMS.modules.base.entity.*;
 import com.Zx1nggg.FAMS.modules.base.mapper.*;
+import com.Zx1nggg.FAMS.modules.lifecycle.service.IPondTaskService;
 import com.Zx1nggg.FAMS.modules.base.service.IStockingService;
 import com.Zx1nggg.FAMS.modules.base.vo.StockingVO;
 import com.Zx1nggg.FAMS.security.util.SecurityUtils;
@@ -31,6 +32,9 @@ public class StockingServiceImpl extends ServiceImpl<StockingMapper, Stocking> i
 
     @Resource
     private SeedlingDictMapper seedlingDictMapper;
+
+    @Resource
+    private IPondTaskService pondTaskService;
 
     @Override
     public Page<StockingVO> pageQuery(Integer pageNum, Integer pageSize,
@@ -115,9 +119,17 @@ public class StockingServiceImpl extends ServiceImpl<StockingMapper, Stocking> i
         save(stocking);
 
         // 联动：首次投放时，批次状态从"已检疫入库"切换为"养殖中"
-        if (batch.getBatchStatus() != null && batch.getBatchStatus() == 1) {
+        boolean isFirstStocking = (batch.getBatchStatus() != null && batch.getBatchStatus() == 1);
+        if (isFirstStocking) {
             batch.setBatchStatus((byte) 2);
             purchaseBatchMapper.updateById(batch);
+        }
+
+        // SOP引擎：首次投放时，根据苗种品种自动生成 PondTask
+        if (isFirstStocking && batch.getSeedlingId() != null) {
+            pondTaskService.generateTasks(
+                    batch.getId(), dto.getPondId(), batch.getBatchNo(),
+                    batch.getSeedlingId(), dto.getStockingDate());
         }
 
         return toVO(stocking);

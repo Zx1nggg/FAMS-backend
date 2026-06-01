@@ -5,6 +5,7 @@
     <!-- 通用查询映射结果 -->
     <resultMap id="BaseResultMap" type="com.Zx1nggg.FAMS.modules.lifecycle.entity.BatchGrowthLog">
         <id column="id" property="id" />
+        <result column="patrol_log_id" property="patrolLogId" />
         <result column="batch_no" property="batchNo" />
         <result column="pond_id" property="pondId" />
         <result column="log_date" property="logDate" />
@@ -17,7 +18,7 @@
 
     <!-- 通用查询结果列 -->
     <sql id="Base_Column_List">
-        id, batch_no, pond_id, log_date, avg_length, avg_weight, routine_death_count, abnormal_death_count, abnormal_reason
+        id, patrol_log_id, batch_no, pond_id, log_date, avg_length, avg_weight, routine_death_count, abnormal_death_count, abnormal_reason
     </sql>
 
 </mapper>

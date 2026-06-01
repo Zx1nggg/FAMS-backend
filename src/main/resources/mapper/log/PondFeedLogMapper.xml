@@ -5,6 +5,7 @@
     <!-- 通用查询映射结果 -->
     <resultMap id="BaseResultMap" type="com.Zx1nggg.FAMS.modules.log.entity.PondFeedLog">
         <id column="id" property="id" />
+        <result column="patrol_log_id" property="patrolLogId" />
         <result column="pond_id" property="pondId" />
         <result column="log_date" property="logDate" />
         <result column="feed_brand" property="feedBrand" />
@@ -14,7 +15,7 @@
 
     <!-- 通用查询结果列 -->
     <sql id="Base_Column_List">
-        id, pond_id, log_date, feed_brand, feed_amount, water_change_status
+        id, patrol_log_id, pond_id, log_date, feed_brand, feed_amount, water_change_status
     </sql>
 
 </mapper>

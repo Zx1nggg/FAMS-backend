@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.Zx1nggg.FAMS.modules.lifecycle.mapper.PatrolLogMapper">
+
+    <resultMap id="BaseResultMap" type="com.Zx1nggg.FAMS.modules.lifecycle.entity.PatrolLog">
+        <id column="id" property="id" />
+        <result column="pond_id" property="pondId" />
+        <result column="batch_no" property="batchNo" />
+        <result column="patrol_time" property="patrolTime" />
+        <result column="weather" property="weather" />
+        <result column="water_temp" property="waterTemp" />
+        <result column="water_color" property="waterColor" />
+        <result column="operator_id" property="operatorId" />
+        <result column="remark" property="remark" />
+        <result column="create_time" property="createTime" />
+        <result column="update_time" property="updateTime" />
+        <result column="is_deleted" property="isDeleted" />
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, pond_id, batch_no, patrol_time, weather, water_temp, water_color, operator_id, remark, create_time, update_time, is_deleted
+    </sql>
+
+</mapper>
