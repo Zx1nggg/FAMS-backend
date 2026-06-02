@@ -209,6 +209,7 @@ public class StockingServiceImpl extends ServiceImpl<StockingMapper, Stocking> i
             PurchaseBatch batch = purchaseBatchMapper.selectById(stocking.getBatchId());
             if (batch != null) {
                 vo.setBatchNo(batch.getBatchNo());
+                vo.setBatchStatus(batch.getBatchStatus());
                 vo.setPurchaseUnit(batch.getPurchaseUnit());
                 vo.setDensityPerUnit(batch.getDensityPerUnit());
                 vo.setEstimatedTotalQty(batch.getEstimatedTotalQty());

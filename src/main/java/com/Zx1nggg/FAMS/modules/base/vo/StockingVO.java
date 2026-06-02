@@ -13,6 +13,7 @@ public class StockingVO {
     private String batchNo;
     private Long seedlingId;
     private String seedlingName;
+    private Byte batchStatus;
     private String purchaseUnit;
     private Integer densityPerUnit;
     private Integer estimatedTotalQty;
