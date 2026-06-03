@@ -3,6 +3,7 @@ package com.Zx1nggg.FAMS.modules.lifecycle.service;
 import com.Zx1nggg.FAMS.modules.lifecycle.dto.BatchGrowthLogDTO;
 import com.Zx1nggg.FAMS.modules.lifecycle.entity.BatchGrowthLog;
 import com.Zx1nggg.FAMS.modules.lifecycle.vo.BatchGrowthLogVO;
+import com.Zx1nggg.FAMS.modules.lifecycle.vo.GrowthChartVO;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
 
@@ -23,4 +24,6 @@ public interface IBatchGrowthLogService extends IService<BatchGrowthLog> {
     BatchGrowthLogVO update(Long id, BatchGrowthLogDTO dto);
 
     void batchDelete(List<Long> ids);
+
+    GrowthChartVO getGrowthChart(String batchNo, Long pondId);
 }

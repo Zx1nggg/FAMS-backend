@@ -5,6 +5,7 @@ import com.Zx1nggg.FAMS.common.api.Result;
 import com.Zx1nggg.FAMS.modules.lifecycle.dto.BatchGrowthLogDTO;
 import com.Zx1nggg.FAMS.modules.lifecycle.service.IBatchGrowthLogService;
 import com.Zx1nggg.FAMS.modules.lifecycle.vo.BatchGrowthLogVO;
+import com.Zx1nggg.FAMS.modules.lifecycle.vo.GrowthChartVO;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -68,5 +69,16 @@ public class BatchGrowthLogController {
     public Result<String> delete(@PathVariable List<Long> ids) {
         batchGrowthLogService.batchDelete(ids);
         return Result.success("删除成功");
+    }
+
+    @Operation(summary = "获取生长曲线图表数据")
+    @GetMapping("/growth-chart")
+    public Result<GrowthChartVO> growthChart(@RequestParam String batchNo,
+                                             @RequestParam Long pondId) {
+        GrowthChartVO vo = batchGrowthLogService.getGrowthChart(batchNo, pondId);
+        if (vo == null) {
+            return Result.error(404, "批次不存在");
+        }
+        return Result.success(vo);
     }
 }

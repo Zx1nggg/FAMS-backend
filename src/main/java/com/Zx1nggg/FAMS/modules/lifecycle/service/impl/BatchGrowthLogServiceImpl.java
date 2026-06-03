@@ -1,12 +1,19 @@
 package com.Zx1nggg.FAMS.modules.lifecycle.service.impl;
 
 import com.Zx1nggg.FAMS.modules.base.entity.Pond;
+import com.Zx1nggg.FAMS.modules.base.entity.PurchaseBatch;
+import com.Zx1nggg.FAMS.modules.base.entity.SeedlingDict;
+import com.Zx1nggg.FAMS.modules.base.entity.Stocking;
 import com.Zx1nggg.FAMS.modules.base.mapper.PondMapper;
+import com.Zx1nggg.FAMS.modules.base.mapper.PurchaseBatchMapper;
+import com.Zx1nggg.FAMS.modules.base.mapper.SeedlingDictMapper;
+import com.Zx1nggg.FAMS.modules.base.mapper.StockingMapper;
 import com.Zx1nggg.FAMS.modules.lifecycle.dto.BatchGrowthLogDTO;
 import com.Zx1nggg.FAMS.modules.lifecycle.entity.BatchGrowthLog;
 import com.Zx1nggg.FAMS.modules.lifecycle.mapper.BatchGrowthLogMapper;
 import com.Zx1nggg.FAMS.modules.lifecycle.service.IBatchGrowthLogService;
 import com.Zx1nggg.FAMS.modules.lifecycle.vo.BatchGrowthLogVO;
+import com.Zx1nggg.FAMS.modules.lifecycle.vo.GrowthChartVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -14,14 +21,29 @@ import jakarta.annotation.Resource;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class BatchGrowthLogServiceImpl extends ServiceImpl<BatchGrowthLogMapper, BatchGrowthLog> implements IBatchGrowthLogService {
 
     @Resource
     private PondMapper pondMapper;
+
+    @Resource
+    private StockingMapper stockingMapper;
+
+    @Resource
+    private PurchaseBatchMapper purchaseBatchMapper;
+
+    @Resource
+    private SeedlingDictMapper seedlingDictMapper;
 
     @Override
     public Page<BatchGrowthLogVO> pageQuery(Integer pageNum, Integer pageSize,
@@ -89,6 +111,127 @@ public class BatchGrowthLogServiceImpl extends ServiceImpl<BatchGrowthLogMapper,
     @Override
     public void batchDelete(List<Long> ids) {
         removeByIds(ids);
+    }
+
+    @Override
+    public GrowthChartVO getGrowthChart(String batchNo, Long pondId) {
+        // 1. 查批次信息
+        PurchaseBatch batch = purchaseBatchMapper.selectOne(
+                new LambdaQueryWrapper<PurchaseBatch>().eq(PurchaseBatch::getBatchNo, batchNo));
+        if (batch == null) {
+            return null;
+        }
+
+        // 2. 查品种名称
+        String seedlingName = null;
+        if (batch.getSeedlingId() != null) {
+            SeedlingDict seedling = seedlingDictMapper.selectById(batch.getSeedlingId());
+            if (seedling != null) {
+                seedlingName = seedling.getCategoryName();
+            }
+        }
+
+        // 3. 查投放记录（获取初始尾数和投放日期）
+        Stocking stocking = stockingMapper.selectOne(
+                new LambdaQueryWrapper<Stocking>()
+                        .eq(Stocking::getBatchId, batch.getId())
+                        .eq(Stocking::getPondId, pondId));
+        Integer initialQty = (stocking != null && stocking.getStockedQty() != null)
+                ? stocking.getStockedQty() : 0;
+        LocalDate stockingDate = (stocking != null) ? stocking.getStockingDate() : null;
+
+        // 4. 查该批次+池塘所有生长记录，按日期升序
+        List<BatchGrowthLog> logs = list(new LambdaQueryWrapper<BatchGrowthLog>()
+                .eq(BatchGrowthLog::getBatchNo, batchNo)
+                .eq(BatchGrowthLog::getPondId, pondId)
+                .orderByAsc(BatchGrowthLog::getLogDate));
+
+        // 5. 查池塘名称
+        String pondName = null;
+        Pond pond = pondMapper.selectById(pondId);
+        if (pond != null) {
+            pondName = pond.getPondName();
+        }
+
+        // 6. 构建 VO
+        GrowthChartVO vo = new GrowthChartVO();
+        vo.setBatchNo(batchNo);
+        vo.setPondName(pondName);
+        vo.setSeedlingName(seedlingName);
+        vo.setStockingDate(stockingDate);
+        vo.setInitialQuantity(initialQty);
+
+        // 7. 按周聚合
+        if (stockingDate == null || logs.isEmpty()) {
+            vo.setDataPoints(new ArrayList<>());
+            return vo;
+        }
+
+        // 按周分组 (weekNumber -> 该周的记录列表)
+        Map<Integer, List<BatchGrowthLog>> weekMap = new LinkedHashMap<>();
+        for (BatchGrowthLog log : logs) {
+            int weekNum = (int) (ChronoUnit.DAYS.between(stockingDate, log.getLogDate()) / 7) + 1;
+            weekMap.computeIfAbsent(weekNum, k -> new ArrayList<>()).add(log);
+        }
+
+        int cumulativeDeaths = 0;
+        List<GrowthChartVO.WeekDataPoint> dataPoints = new ArrayList<>();
+
+        for (Map.Entry<Integer, List<BatchGrowthLog>> entry : weekMap.entrySet()) {
+            Integer weekNum = entry.getKey();
+            List<BatchGrowthLog> weekLogs = entry.getValue();
+
+            GrowthChartVO.WeekDataPoint dp = new GrowthChartVO.WeekDataPoint();
+            dp.setWeekNumber(weekNum);
+            dp.setWeekLabel("第" + weekNum + "周");
+
+            // 本周平均体重和体长（取多条记录的平均值）
+            BigDecimal avgWeight = BigDecimal.ZERO;
+            BigDecimal avgLength = BigDecimal.ZERO;
+            int weightCount = 0, lengthCount = 0;
+            int weeklyDeaths = 0;
+
+            for (BatchGrowthLog log : weekLogs) {
+                if (log.getAvgWeight() != null) {
+                    avgWeight = avgWeight.add(log.getAvgWeight());
+                    weightCount++;
+                }
+                if (log.getAvgLength() != null) {
+                    avgLength = avgLength.add(log.getAvgLength());
+                    lengthCount++;
+                }
+                if (log.getRoutineDeathCount() != null) {
+                    weeklyDeaths += log.getRoutineDeathCount();
+                }
+                if (log.getAbnormalDeathCount() != null) {
+                    weeklyDeaths += log.getAbnormalDeathCount();
+                }
+            }
+
+            dp.setAvgWeight(weightCount > 0
+                    ? avgWeight.divide(BigDecimal.valueOf(weightCount), 1, RoundingMode.HALF_UP)
+                    : null);
+            dp.setAvgLength(lengthCount > 0
+                    ? avgLength.divide(BigDecimal.valueOf(lengthCount), 1, RoundingMode.HALF_UP)
+                    : null);
+            dp.setWeeklyDeaths(weeklyDeaths);
+
+            cumulativeDeaths += weeklyDeaths;
+            dp.setCumulativeDeaths(cumulativeDeaths);
+
+            // 存活率
+            if (initialQty > 0) {
+                BigDecimal rate = BigDecimal.valueOf(100.0 * (initialQty - cumulativeDeaths) / initialQty);
+                dp.setSurvivalRate(rate.setScale(1, RoundingMode.HALF_UP));
+            } else {
+                dp.setSurvivalRate(BigDecimal.ZERO);
+            }
+
+            dataPoints.add(dp);
+        }
+
+        vo.setDataPoints(dataPoints);
+        return vo;
     }
 
     // ==================== private helpers ====================
