@@ -2,10 +2,13 @@ package com.Zx1nggg.FAMS.modules.system.controller;
 
 
 import com.Zx1nggg.FAMS.common.api.Result;
+import com.Zx1nggg.FAMS.modules.system.entity.RegistrationApplication;
+import com.Zx1nggg.FAMS.modules.system.mapper.RegistrationApplicationMapper;
 import com.Zx1nggg.FAMS.security.entity.LoginUser;
 import com.Zx1nggg.FAMS.security.service.TokenBlacklistService;
 import com.Zx1nggg.FAMS.security.service.UserFarmCacheService;
 import com.Zx1nggg.FAMS.security.util.JwtUtils;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -33,6 +36,9 @@ public class AuthController {
 
     @Autowired
     private UserFarmCacheService userFarmCacheService;
+
+    @Autowired
+    private RegistrationApplicationMapper registrationApplicationMapper;
 
     /**
      * 从请求中提取 Token 的通用方法（兼容 Cookie 和 Header）
@@ -69,6 +75,21 @@ public class AuthController {
         try {
             authentication = authenticationManager.authenticate(authenticationToken);
         } catch (Exception e) {
+            // 登录失败时，检查是否有入驻申请记录，提供更友好的提示
+            RegistrationApplication app = registrationApplicationMapper.selectOne(
+                    new LambdaQueryWrapper<RegistrationApplication>()
+                            .eq(RegistrationApplication::getUsername, username)
+                            .orderByDesc(RegistrationApplication::getCreatedAt)
+                            .last("LIMIT 1"));
+            if (app != null) {
+                if (app.getStatus() == 0) {
+                    return Result.error(400, "您的入驻申请正在审核中，请耐心等待管理员审批");
+                } else if (app.getStatus() == 2) {
+                    String reason = app.getReviewComment() != null && !app.getReviewComment().isEmpty()
+                            ? "，拒绝原因：" + app.getReviewComment() : "";
+                    return Result.error(400, "您的入驻申请已被拒绝" + reason + "。请重新提交入驻申请");
+                }
+            }
             return Result.error(400, "账号或密码错误");
         }
 
@@ -100,6 +121,7 @@ public class AuthController {
         Map<String, Object> userInfo = new HashMap<>();
         userInfo.put("name", loginUser.getUser().getRealName());
         userInfo.put("role", loginUser.getUser().getUserType());
+        userInfo.put("avatar", loginUser.getUser().getAvatar());
         data.put("user", userInfo);
 
         return Result.success(data);

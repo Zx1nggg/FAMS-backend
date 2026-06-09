@@ -13,6 +13,11 @@ spring:
     username: root
     password: wumengyun520.
 
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 10MB
+
   redis:
     host: 127.0.0.1
     port: 6379
@@ -30,6 +35,10 @@ mybatis-plus:
   configuration:
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl # mybatis日志
     map-underscore-to-camel-case: true # 开启驼峰命名
+
+app:
+  upload:
+    avatar-dir: D:/华农/毕业设计/FAMS/uploads/avatar
 
 jwt:
   secret: Zx1ngggAndWumengyunFAMS2026MakeBySCAUIFeelGoodQBQBQB

@@ -12,11 +12,15 @@
         <result column="user_type" property="userType" />
         <result column="farm_id" property="farmId" />
         <result column="status" property="status" />
+        <result column="avatar" property="avatar" />
+        <result column="email" property="email" />
+        <result column="gender" property="gender" />
+        <result column="address" property="address" />
     </resultMap>
 
     <!-- 通用查询结果列 -->
     <sql id="Base_Column_List">
-        id, username, password, real_name, phone, user_type, farm_id, status
+        id, username, password, real_name, phone, user_type, farm_id, status, avatar, email, gender, address
     </sql>
 
 </mapper>

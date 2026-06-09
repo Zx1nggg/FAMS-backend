@@ -62,4 +62,11 @@ public class Supplier implements Serializable {
 
     @TableField("create_time")
     private LocalDateTime createTime;
+
+    /**
+     * 所属用户ID（FARMER仅可见自己的供应商，同一用户多场区共享）
+     */
+    @TableField("user_id")
+    @Schema(description = "所属用户ID（FARMER仅可见自己的供应商）")
+    private Long userId;
 }

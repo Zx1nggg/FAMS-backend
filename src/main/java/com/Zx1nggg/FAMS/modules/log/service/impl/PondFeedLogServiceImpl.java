@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 public class PondFeedLogServiceImpl extends ServiceImpl<PondFeedLogMapper, PondFeedLog> implements IPondFeedLogService {
@@ -29,6 +30,10 @@ public class PondFeedLogServiceImpl extends ServiceImpl<PondFeedLogMapper, PondF
     public Page<PondFeedLogVO> pageQuery(Integer pageNum, Integer pageSize,
                                          Long pondId, Long farmId, Long patrolLogId,
                                          LocalDate startDate, LocalDate endDate) {
+        // 🌟 数据隔离：FARMER 只能查看本农场的投喂日志
+        if (SecurityUtils.isFarmer()) {
+            farmId = SecurityUtils.getCurrentFarmId();
+        }
         LambdaQueryWrapper<PondFeedLog> wrapper = new LambdaQueryWrapper<>();
 
         if (farmId != null) {
@@ -63,11 +68,15 @@ public class PondFeedLogServiceImpl extends ServiceImpl<PondFeedLogMapper, PondF
     public PondFeedLogVO queryById(Long id) {
         PondFeedLog log = getById(id);
         if (log == null) return null;
+        // 🌟 数据隔离
+        checkFarmAccessByPondId(log.getPondId());
         return toVO(log);
     }
 
     @Override
     public PondFeedLogVO create(PondFeedLogDTO dto) {
+        // 🌟 数据隔离
+        checkFarmAccessByPondId(dto.getPondId());
         PondFeedLog log = new PondFeedLog();
         BeanUtils.copyProperties(dto, log);
         save(log);
@@ -78,6 +87,9 @@ public class PondFeedLogServiceImpl extends ServiceImpl<PondFeedLogMapper, PondF
     public PondFeedLogVO update(Long id, PondFeedLogDTO dto) {
         PondFeedLog log = getById(id);
         if (log == null) return null;
+        // 🌟 数据隔离
+        checkFarmAccessByPondId(log.getPondId());
+        checkFarmAccessByPondId(dto.getPondId());
         BeanUtils.copyProperties(dto, log);
         log.setId(id);
         updateById(log);
@@ -86,10 +98,30 @@ public class PondFeedLogServiceImpl extends ServiceImpl<PondFeedLogMapper, PondF
 
     @Override
     public void batchDelete(List<Long> ids) {
+        // 🌟 数据隔离
+        if (SecurityUtils.isFarmer()) {
+            List<PondFeedLog> logs = listByIds(ids);
+            for (PondFeedLog log : logs) {
+                checkFarmAccessByPondId(log.getPondId());
+            }
+        }
         removeByIds(ids);
     }
 
     // ==================== private helpers ====================
+
+    /**
+     * 🌟 数据隔离：校验 FARMER 是否有权操作该池塘所属农场
+     */
+    private void checkFarmAccessByPondId(Long pondId) {
+        if (pondId == null) return;
+        if (SecurityUtils.isFarmer()) {
+            Pond pond = pondMapper.selectById(pondId);
+            if (pond == null || !Objects.equals(pond.getFarmId(), SecurityUtils.getCurrentFarmId())) {
+                throw new BusinessException(403, "无权操作其他养殖场的数据");
+            }
+        }
+    }
 
     private PondFeedLogVO toVO(PondFeedLog log) {
         PondFeedLogVO vo = new PondFeedLogVO();

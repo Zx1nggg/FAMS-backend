@@ -79,4 +79,32 @@ public class User implements Serializable {
     @TableField("status")
     @Schema(description = "帐号状态: 1正常, 0停用")
     private Byte status;
+
+    /**
+     * 头像路径（相对路径，如 uploads/avatar/1_xxx.jpg）
+     */
+    @TableField("avatar")
+    @Schema(description = "头像路径")
+    private String avatar;
+
+    /**
+     * 电子邮箱
+     */
+    @TableField("email")
+    @Schema(description = "电子邮箱")
+    private String email;
+
+    /**
+     * 性别: 0未设置, 1男, 2女
+     */
+    @TableField("gender")
+    @Schema(description = "性别: 0未设置, 1男, 2女")
+    private Integer gender;
+
+    /**
+     * 地址 / 所在地
+     */
+    @TableField("address")
+    @Schema(description = "地址 / 所在地")
+    private String address;
 }

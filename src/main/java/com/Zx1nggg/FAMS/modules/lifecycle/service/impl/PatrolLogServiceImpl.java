@@ -36,6 +36,10 @@ public class PatrolLogServiceImpl extends ServiceImpl<PatrolLogMapper, PatrolLog
     public Page<PatrolLogVO> pageQuery(Integer pageNum, Integer pageSize,
                                        Long pondId, Long farmId,
                                        LocalDate startDate, LocalDate endDate) {
+        // 🌟 数据隔离：FARMER 只能查看本农场的巡塘日志
+        if (SecurityUtils.isFarmer()) {
+            farmId = SecurityUtils.getCurrentFarmId();
+        }
         LambdaQueryWrapper<PatrolLog> wrapper = new LambdaQueryWrapper<>();
 
         if (farmId != null) {

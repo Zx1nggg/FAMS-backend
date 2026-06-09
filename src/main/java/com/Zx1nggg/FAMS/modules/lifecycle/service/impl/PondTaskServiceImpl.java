@@ -21,6 +21,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 public class PondTaskServiceImpl extends ServiceImpl<PondTaskMapper, PondTask> implements IPondTaskService {
@@ -35,6 +36,10 @@ public class PondTaskServiceImpl extends ServiceImpl<PondTaskMapper, PondTask> i
     public Page<PondTaskVO> pageQuery(Integer pageNum, Integer pageSize,
                                       Long pondId, Long farmId, LocalDate scheduledDate,
                                       Byte status, String batchNo) {
+        // 🌟 数据隔离：FARMER 只能查看本农场的任务
+        if (SecurityUtils.isFarmer()) {
+            farmId = SecurityUtils.getCurrentFarmId();
+        }
         LambdaQueryWrapper<PondTask> wrapper = new LambdaQueryWrapper<>();
 
         if (farmId != null) {
@@ -69,6 +74,8 @@ public class PondTaskServiceImpl extends ServiceImpl<PondTaskMapper, PondTask> i
     public PondTaskVO queryById(Long id) {
         PondTask task = getById(id);
         if (task == null) return null;
+        // 🌟 数据隔离
+        checkFarmAccessByPondId(task.getPondId());
         return toVO(task);
     }
 
@@ -76,6 +83,8 @@ public class PondTaskServiceImpl extends ServiceImpl<PondTaskMapper, PondTask> i
     public void checkOff(Long id) {
         PondTask task = getById(id);
         if (task == null) throw new BusinessException(404, "任务不存在");
+        // 🌟 数据隔离
+        checkFarmAccessByPondId(task.getPondId());
         if (task.getStatus() != null && task.getStatus() == 1) {
             throw new BusinessException(400, "任务已完成，无需重复打卡");
         }
@@ -94,6 +103,13 @@ public class PondTaskServiceImpl extends ServiceImpl<PondTaskMapper, PondTask> i
 
     @Override
     public void batchDelete(List<Long> ids) {
+        // 🌟 数据隔离：FARMER 只能删除本农场任务的记录
+        if (SecurityUtils.isFarmer()) {
+            List<PondTask> tasks = listByIds(ids);
+            for (PondTask task : tasks) {
+                checkFarmAccessByPondId(task.getPondId());
+            }
+        }
         removeByIds(ids);
     }
 
@@ -120,6 +136,19 @@ public class PondTaskServiceImpl extends ServiceImpl<PondTaskMapper, PondTask> i
     }
 
     // ==================== private helpers ====================
+
+    /**
+     * 🌟 数据隔离：校验 FARMER 是否有权操作该池塘所属农场
+     */
+    private void checkFarmAccessByPondId(Long pondId) {
+        if (pondId == null) return;
+        if (SecurityUtils.isFarmer()) {
+            Pond pond = pondMapper.selectById(pondId);
+            if (pond == null || !Objects.equals(pond.getFarmId(), SecurityUtils.getCurrentFarmId())) {
+                throw new BusinessException(403, "无权操作其他养殖场的数据");
+            }
+        }
+    }
 
     private PondTaskVO toVO(PondTask task) {
         PondTaskVO vo = new PondTaskVO();

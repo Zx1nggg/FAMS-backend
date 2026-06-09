@@ -1,5 +1,6 @@
 package com.Zx1nggg.FAMS.modules.lifecycle.service.impl;
 
+import com.Zx1nggg.FAMS.common.exception.BusinessException;
 import com.Zx1nggg.FAMS.modules.base.entity.Pond;
 import com.Zx1nggg.FAMS.modules.base.entity.PurchaseBatch;
 import com.Zx1nggg.FAMS.modules.base.entity.SeedlingDict;
@@ -14,6 +15,7 @@ import com.Zx1nggg.FAMS.modules.lifecycle.mapper.BatchGrowthLogMapper;
 import com.Zx1nggg.FAMS.modules.lifecycle.service.IBatchGrowthLogService;
 import com.Zx1nggg.FAMS.modules.lifecycle.vo.BatchGrowthLogVO;
 import com.Zx1nggg.FAMS.modules.lifecycle.vo.GrowthChartVO;
+import com.Zx1nggg.FAMS.security.util.SecurityUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -29,6 +31,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @Service
 public class BatchGrowthLogServiceImpl extends ServiceImpl<BatchGrowthLogMapper, BatchGrowthLog> implements IBatchGrowthLogService {
@@ -50,6 +53,10 @@ public class BatchGrowthLogServiceImpl extends ServiceImpl<BatchGrowthLogMapper,
                                             String batchNo, Long pondId, Long farmId,
                                             Long patrolLogId,
                                             LocalDate startDate, LocalDate endDate) {
+        // 🌟 数据隔离：FARMER 只能查看本农场的生长记录
+        if (SecurityUtils.isFarmer()) {
+            farmId = SecurityUtils.getCurrentFarmId();
+        }
         LambdaQueryWrapper<BatchGrowthLog> wrapper = new LambdaQueryWrapper<>();
 
         if (farmId != null) {
@@ -87,11 +94,15 @@ public class BatchGrowthLogServiceImpl extends ServiceImpl<BatchGrowthLogMapper,
     public BatchGrowthLogVO queryById(Long id) {
         BatchGrowthLog log = getById(id);
         if (log == null) return null;
+        // 🌟 数据隔离
+        checkFarmAccessByPondId(log.getPondId());
         return toVO(log);
     }
 
     @Override
     public BatchGrowthLogVO create(BatchGrowthLogDTO dto) {
+        // 🌟 数据隔离：FARMER 只能在本农场池塘创建记录
+        checkFarmAccessByPondId(dto.getPondId());
         BatchGrowthLog log = new BatchGrowthLog();
         BeanUtils.copyProperties(dto, log);
         save(log);
@@ -102,6 +113,9 @@ public class BatchGrowthLogServiceImpl extends ServiceImpl<BatchGrowthLogMapper,
     public BatchGrowthLogVO update(Long id, BatchGrowthLogDTO dto) {
         BatchGrowthLog log = getById(id);
         if (log == null) return null;
+        // 🌟 数据隔离
+        checkFarmAccessByPondId(log.getPondId());
+        checkFarmAccessByPondId(dto.getPondId());
         BeanUtils.copyProperties(dto, log);
         log.setId(id);
         updateById(log);
@@ -110,6 +124,13 @@ public class BatchGrowthLogServiceImpl extends ServiceImpl<BatchGrowthLogMapper,
 
     @Override
     public void batchDelete(List<Long> ids) {
+        // 🌟 数据隔离：FARMER 只能删除本农场记录
+        if (SecurityUtils.isFarmer()) {
+            List<BatchGrowthLog> logs = listByIds(ids);
+            for (BatchGrowthLog log : logs) {
+                checkFarmAccessByPondId(log.getPondId());
+            }
+        }
         removeByIds(ids);
     }
 
@@ -235,6 +256,19 @@ public class BatchGrowthLogServiceImpl extends ServiceImpl<BatchGrowthLogMapper,
     }
 
     // ==================== private helpers ====================
+
+    /**
+     * 🌟 数据隔离：校验 FARMER 是否有权操作该池塘所属农场
+     */
+    private void checkFarmAccessByPondId(Long pondId) {
+        if (pondId == null) return;
+        if (SecurityUtils.isFarmer()) {
+            Pond pond = pondMapper.selectById(pondId);
+            if (pond == null || !Objects.equals(pond.getFarmId(), SecurityUtils.getCurrentFarmId())) {
+                throw new BusinessException(403, "无权操作其他养殖场的数据");
+            }
+        }
+    }
 
     private BatchGrowthLogVO toVO(BatchGrowthLog log) {
         BatchGrowthLogVO vo = new BatchGrowthLogVO();

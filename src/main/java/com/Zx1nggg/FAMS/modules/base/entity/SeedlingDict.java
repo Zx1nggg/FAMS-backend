@@ -66,4 +66,11 @@ public class SeedlingDict implements Serializable {
     @TableField("min_do")
     @Schema(description = "最低溶氧量(mg/L)")
     private BigDecimal minDo;
+
+    /**
+     * 所属用户ID（FARMER仅可见自己的苗种字典，同一用户多场区共享）
+     */
+    @TableField("user_id")
+    @Schema(description = "所属用户ID（FARMER仅可见自己的苗种字典）")
+    private Long userId;
 }

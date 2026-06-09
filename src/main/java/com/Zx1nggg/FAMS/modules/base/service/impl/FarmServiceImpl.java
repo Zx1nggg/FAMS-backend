@@ -1,5 +1,6 @@
 package com.Zx1nggg.FAMS.modules.base.service.impl;
 
+import com.Zx1nggg.FAMS.common.exception.BusinessException;
 import com.Zx1nggg.FAMS.modules.base.dto.FarmDTO;
 import com.Zx1nggg.FAMS.modules.base.entity.Farm;
 import com.Zx1nggg.FAMS.modules.base.mapper.FarmMapper;
@@ -7,6 +8,7 @@ import com.Zx1nggg.FAMS.modules.base.service.IFarmService;
 import com.Zx1nggg.FAMS.modules.base.service.IPondService;
 import com.Zx1nggg.FAMS.modules.base.vo.FarmVO;
 import com.Zx1nggg.FAMS.security.service.UserFarmCacheService;
+import com.Zx1nggg.FAMS.security.util.SecurityUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -36,6 +38,10 @@ public class FarmServiceImpl extends ServiceImpl<FarmMapper, Farm> implements IF
         if (farmName != null && !farmName.isEmpty()) {
             wrapper.like(Farm::getFarmName, farmName);
         }
+        // 🌟 数据隔离：FARMER 只能看到自己名下的养殖场
+        if (SecurityUtils.isFarmer()) {
+            wrapper.eq(Farm::getUserId, SecurityUtils.getCurrentUserId());
+        }
         wrapper.orderByDesc(Farm::getId);
         Page<Farm> page = page(new Page<>(pageNum, pageSize), wrapper);
         return toVOPage(page);
@@ -47,6 +53,8 @@ public class FarmServiceImpl extends ServiceImpl<FarmMapper, Farm> implements IF
         if (farm == null) {
             return null;
         }
+        // 🌟 数据隔离：FARMER 不能查看别人的养殖场
+        checkFarmOwnership(farm);
         return toVO(farm);
     }
 
@@ -54,7 +62,10 @@ public class FarmServiceImpl extends ServiceImpl<FarmMapper, Farm> implements IF
     public FarmVO create(FarmDTO dto, Long currentUserId) {
         Farm farm = new Farm();
         BeanUtils.copyProperties(dto, farm);
-        if (farm.getUserId() == null) {
+        // 🌟 数据隔离：FARMER 强制绑定到当前用户
+        if (SecurityUtils.isFarmer()) {
+            farm.setUserId(SecurityUtils.getCurrentUserId());
+        } else if (farm.getUserId() == null) {
             farm.setUserId(currentUserId);
         }
         save(farm);
@@ -70,6 +81,8 @@ public class FarmServiceImpl extends ServiceImpl<FarmMapper, Farm> implements IF
         if (farm == null) {
             return null;
         }
+        // 🌟 数据隔离：FARMER 不能修改别人的养殖场
+        checkFarmOwnership(farm);
         Set<Long> affectedUsers = new HashSet<>();
         if (farm.getUserId() != null) {
             affectedUsers.add(farm.getUserId());
@@ -79,6 +92,10 @@ public class FarmServiceImpl extends ServiceImpl<FarmMapper, Farm> implements IF
         }
         BeanUtils.copyProperties(dto, farm);
         farm.setId(id);
+        // 🌟 数据隔离：FARMER 不能将养殖场转让给其他用户
+        if (SecurityUtils.isFarmer()) {
+            farm.setUserId(SecurityUtils.getCurrentUserId());
+        }
         updateById(farm);
         affectedUsers.forEach(userFarmCacheService::evictUserFarms);
         return toVO(farm);
@@ -87,6 +104,15 @@ public class FarmServiceImpl extends ServiceImpl<FarmMapper, Farm> implements IF
     @Override
     public void batchDelete(List<Long> ids) {
         List<Farm> farms = listByIds(ids);
+        // 🌟 数据隔离：FARMER 只能删除自己的养殖场
+        if (SecurityUtils.isFarmer()) {
+            Long currentUserId = SecurityUtils.getCurrentUserId();
+            for (Farm farm : farms) {
+                if (!Objects.equals(farm.getUserId(), currentUserId)) {
+                    throw new BusinessException(403, "无权删除养殖场 ID=" + farm.getId());
+                }
+            }
+        }
         Set<Long> affectedUsers = farms.stream()
                 .map(Farm::getUserId)
                 .filter(Objects::nonNull)
@@ -114,6 +140,16 @@ public class FarmServiceImpl extends ServiceImpl<FarmMapper, Farm> implements IF
                 .map(Farm::getUserId)
                 .filter(Objects::nonNull)
                 .forEach(userFarmCacheService::evictUserFarms);
+    }
+
+    /**
+     * 🌟 数据隔离：校验 FARMER 是否拥有该养殖场的操作权限
+     */
+    private void checkFarmOwnership(Farm farm) {
+        if (SecurityUtils.isFarmer()
+                && !Objects.equals(farm.getUserId(), SecurityUtils.getCurrentUserId())) {
+            throw new BusinessException(403, "无权操作该养殖场");
+        }
     }
 
     private FarmVO toVO(Farm farm) {
