@@ -42,14 +42,14 @@ public class JwtUtils {
     /**
      * 生成 JWT Token（含 JTI，支持黑名单撤销）
      */
-    public String generateToken(Long userId, String username, String userType, Long farmId) {
+    public String generateToken(Long userId, String phone, String userType, Long farmId) {
         return Jwts.builder()
                 .id(UUID.randomUUID().toString()) // 生成唯一 JWT ID，用于 Token 黑名单撤销
                 .claim("userId", userId)
-                .claim("username", username)
+                .claim("phone", phone)
                 .claim("userType", userType)
                 .claim("farmId", farmId) // 塞入农场ID
-                .subject(username)
+                .subject(phone)
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + expiration))
                 .signWith(getSigningKey())

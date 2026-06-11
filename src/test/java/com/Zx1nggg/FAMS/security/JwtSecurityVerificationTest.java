@@ -68,7 +68,7 @@ class JwtSecurityVerificationTest {
     void login_shouldReturnTokenInBothChannels() throws Exception {
         String loginJson = """
                 {
-                    "username": "admin",
+                    "phone": "13800000001",
                     "password": "123456"
                 }
                 """;

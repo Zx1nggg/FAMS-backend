@@ -21,7 +21,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .excludePathPatterns(
                         "/auth/login",             // 放行登录接口
                         "/auth/register",          // 放行入驻申请
-                        "/auth/check-username",    // 放行用户名检查
+                        "/auth/check-phone",       // 放行手机号检查
                         "/auth/registration-status", // 放行申请状态查询
                         "/error",                 // 放行错误流转
                         "/uploads/**",            // 放行静态资源（头像等上传文件）

@@ -79,14 +79,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             // 获取载荷
             Claims claims = jwtUtils.getClaimsFromToken(token);
-            String username = claims.getSubject();
+            String phone = claims.getSubject();
             String userType = claims.get("userType", String.class);
             Long userId = claims.get("userId", Long.class);
             // 从 Claims 中获取 farmId，用于跨域数据隔离校验
             Long farmId = claims.get("farmId", Long.class);
 
             // 4. 设置认证信息到 Spring Security 上下文
-            if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+            if (phone != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 UsernamePasswordAuthenticationToken authenticationToken =
                         new UsernamePasswordAuthenticationToken(
                                 userId, // Principal: 存入 userId，方便后续业务随时获取

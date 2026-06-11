@@ -64,12 +64,12 @@ public class AuthController {
     @PostMapping("/login")
     // 必须加上 HttpServletResponse 参数，用来往浏览器写 Cookie
     public Result<Map<String, Object>> login(@RequestBody Map<String, String> loginForm, HttpServletResponse response) {
-        String username = loginForm.get("username");
+        String phone = loginForm.get("phone");
         String password = loginForm.get("password");
 
         // 1. 自动进行身份验证 (底层调 UserDetailsService 和 PasswordEncoder)
         UsernamePasswordAuthenticationToken authenticationToken =
-                new UsernamePasswordAuthenticationToken(username, password);
+                new UsernamePasswordAuthenticationToken(phone, password);
 
         Authentication authentication;
         try {
@@ -78,7 +78,7 @@ public class AuthController {
             // 登录失败时，检查是否有入驻申请记录，提供更友好的提示
             RegistrationApplication app = registrationApplicationMapper.selectOne(
                     new LambdaQueryWrapper<RegistrationApplication>()
-                            .eq(RegistrationApplication::getUsername, username)
+                            .eq(RegistrationApplication::getPhone, phone)
                             .orderByDesc(RegistrationApplication::getCreatedAt)
                             .last("LIMIT 1"));
             if (app != null) {
@@ -90,7 +90,7 @@ public class AuthController {
                     return Result.error(400, "您的入驻申请已被拒绝" + reason + "。请重新提交入驻申请");
                 }
             }
-            return Result.error(400, "账号或密码错误");
+            return Result.error(400, "手机号或密码错误");
         }
 
         // 2. 认证通过后，获取封装的 LoginUser
@@ -99,7 +99,7 @@ public class AuthController {
         // 3. 生成 Token (包含 4 个参数，实现了数据隔离)
         String token = jwtUtils.generateToken(
                 loginUser.getUser().getId(),
-                loginUser.getUsername(),
+                loginUser.getUser().getPhone(),
                 loginUser.getUser().getUserType(),
                 loginUser.getUser().getFarmId() // 传入农场ID
         );
@@ -119,6 +119,7 @@ public class AuthController {
         // 6. 返回前端数据
         Map<String, Object> data = new HashMap<>();
         Map<String, Object> userInfo = new HashMap<>();
+        userInfo.put("id", loginUser.getUser().getId());
         userInfo.put("name", loginUser.getUser().getRealName());
         userInfo.put("role", loginUser.getUser().getUserType());
         userInfo.put("avatar", loginUser.getUser().getAvatar());

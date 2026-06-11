@@ -9,4 +9,5 @@ public class UpdateUserProfileDTO {
     private String email;
     private Integer gender;
     private String address;
+    private String username;
 }

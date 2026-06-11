@@ -18,12 +18,12 @@ public class UserDetailsServiceImpl implements UserDetailsService {
     private IUserService userService;
 
     @Override
-    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        // 去数据库查询用户信息
-        User user = userService.getOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username));
+    public UserDetails loadUserByUsername(String phone) throws UsernameNotFoundException {
+        // 按手机号查询用户（登录标识符已从 username 切换为 phone）
+        User user = userService.getOne(new LambdaQueryWrapper<User>().eq(User::getPhone, phone));
 
         if (user == null) {
-            throw new UsernameNotFoundException("用户名不存在");
+            throw new UsernameNotFoundException("手机号未注册");
         }
 
         // 封装成 Spring Security 认识的 LoginUser 返回

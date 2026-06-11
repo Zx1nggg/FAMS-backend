@@ -32,21 +32,21 @@ public class RegistrationController {
         return Result.success("入驻申请已提交，请等待管理员审核");
     }
 
-    @Operation(summary = "检查用户名是否可用")
-    @GetMapping("/auth/check-username")
-    public Result<Map<String, Object>> checkUsername(@RequestParam String username) {
-        boolean available = registrationApplicationService.isUsernameAvailable(username);
+    @Operation(summary = "检查手机号是否可用")
+    @GetMapping("/auth/check-phone")
+    public Result<Map<String, Object>> checkPhone(@RequestParam String phone) {
+        boolean available = registrationApplicationService.isPhoneAvailable(phone);
         Map<String, Object> data = Map.of(
-                "username", username,
+                "phone", phone,
                 "available", available
         );
         return Result.success(data);
     }
 
-    @Operation(summary = "查询入驻申请状态（申请人查询）")
+    @Operation(summary = "查询入驻申请状态（按手机号查询）")
     @GetMapping("/auth/registration-status")
-    public Result<RegistrationApplicationVO> queryStatus(@RequestParam String username) {
-        RegistrationApplicationVO vo = registrationApplicationService.queryStatusByUsername(username);
+    public Result<RegistrationApplicationVO> queryStatus(@RequestParam String phone) {
+        RegistrationApplicationVO vo = registrationApplicationService.queryStatusByPhone(phone);
         return Result.success(vo);
     }
 

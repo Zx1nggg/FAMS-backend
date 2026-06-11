@@ -38,7 +38,7 @@ public class FarmServiceImpl extends ServiceImpl<FarmMapper, Farm> implements IF
         if (farmName != null && !farmName.isEmpty()) {
             wrapper.like(Farm::getFarmName, farmName);
         }
-        // 🌟 数据隔离：FARMER 只能看到自己名下的养殖场
+        // 数据隔离：FARMER 只能看到自己名下的养殖场
         if (SecurityUtils.isFarmer()) {
             wrapper.eq(Farm::getUserId, SecurityUtils.getCurrentUserId());
         }

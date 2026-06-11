@@ -23,9 +23,9 @@ public interface IRegistrationApplicationService extends IService<RegistrationAp
     void submitApplication(RegistrationReqDTO dto);
 
     /**
-     * 检查用户名是否已被占用（包括sys_user表和申请表）
+     * 检查手机号是否已被占用（包括sys_user表和申请表）
      */
-    boolean isUsernameAvailable(String username);
+    boolean isPhoneAvailable(String phone);
 
     /**
      * 分页查询入驻申请列表
@@ -47,7 +47,7 @@ public interface IRegistrationApplicationService extends IService<RegistrationAp
     Long approveApplication(Long id, Long reviewerId, ApprovalReqDTO dto);
 
     /**
-     * 查询申请状态（申请人查询自己的申请）
+     * 查询申请状态（按手机号查询）
      */
-    RegistrationApplicationVO queryStatusByUsername(String username);
+    RegistrationApplicationVO queryStatusByPhone(String phone);
 }

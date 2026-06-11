@@ -3,6 +3,7 @@ package com.Zx1nggg.FAMS.modules.lifecycle.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
@@ -104,6 +105,87 @@ public class HarvestRecord implements Serializable {
     @Schema(description = "经手人")
     private Long operatorId;
 
+    /**
+     * 出塘单价(元/kg)
+     */
+    @TableField("unit_price")
+    @Schema(description = "出塘单价(元/kg)")
+    private java.math.BigDecimal unitPrice;
+
+    /**
+     * 总收入(元) = actual_total_weight_kg × unit_price
+     */
+    @TableField("total_revenue")
+    @Schema(description = "总收入(元) = actual_total_weight_kg × unit_price")
+    private java.math.BigDecimal totalRevenue;
+
+    /**
+     * 苗种成本(元)
+     */
+    @TableField("seedling_cost")
+    @Schema(description = "苗种成本(元)")
+    private java.math.BigDecimal seedlingCost;
+
+    /**
+     * 饲料成本(元)
+     */
+    @TableField("feed_cost")
+    @Schema(description = "饲料成本(元)")
+    private java.math.BigDecimal feedCost;
+
+    /**
+     * 药品成本(元)
+     */
+    @TableField("medicine_cost")
+    @Schema(description = "药品成本(元)")
+    private java.math.BigDecimal medicineCost;
+
+    /**
+     * 其他成本(元)
+     */
+    @TableField("other_cost")
+    @Schema(description = "其他成本(元)")
+    private java.math.BigDecimal otherCost;
+
+    /**
+     * 总成本(元) = 四项成本之和
+     */
+    @TableField("total_cost")
+    @Schema(description = "总成本(元) = 四项成本之和")
+    private java.math.BigDecimal totalCost;
+
+    /**
+     * 净利润(元) = total_revenue - total_cost
+     */
+    @TableField("net_profit")
+    @Schema(description = "净利润(元) = total_revenue - total_cost")
+    private java.math.BigDecimal netProfit;
+
+    /**
+     * 结算状态: 0=未结算 1=已结算
+     */
+    @TableField("settlement_status")
+    @Schema(description = "结算状态: 0=未结算 1=已结算")
+    private Integer settlementStatus;
+
+    /**
+     * 备注
+     */
+    @TableField("remark")
+    @Schema(description = "备注")
+    private String remark;
+
+    /**
+     * 逻辑删除: 0=正常 1=已删除
+     */
+    @TableLogic
+    @TableField("is_deleted")
+    @Schema(description = "逻辑删除: 0=正常 1=已删除")
+    private Integer isDeleted;
+
     @TableField("create_time")
     private LocalDateTime createTime;
+
+    @TableField("update_time")
+    private LocalDateTime updateTime;
 }

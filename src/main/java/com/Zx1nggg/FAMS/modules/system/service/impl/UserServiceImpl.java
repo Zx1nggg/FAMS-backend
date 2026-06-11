@@ -28,6 +28,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         if (dto.getEmail() != null) user.setEmail(dto.getEmail());
         if (dto.getGender() != null) user.setGender(dto.getGender());
         if (dto.getAddress() != null) user.setAddress(dto.getAddress());
+        if (dto.getUsername()!= null) user.setUsername(dto.getUsername());
         updateById(user);
         return toVO(user);
     }

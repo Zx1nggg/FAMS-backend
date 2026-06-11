@@ -85,7 +85,7 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/auth/login",
                                 "/auth/register",
-                                "/auth/check-username",
+                                "/auth/check-phone",
                                 "/auth/registration-status",
                                 "/login",
                                 "/uploads/**",
