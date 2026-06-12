@@ -3,8 +3,10 @@ package com.Zx1nggg.FAMS.modules.lifecycle.service.impl;
 import com.Zx1nggg.FAMS.common.exception.BusinessException;
 import com.Zx1nggg.FAMS.modules.base.entity.Farm;
 import com.Zx1nggg.FAMS.modules.base.entity.Pond;
+import com.Zx1nggg.FAMS.modules.base.entity.PurchaseBatch;
 import com.Zx1nggg.FAMS.modules.base.mapper.FarmMapper;
 import com.Zx1nggg.FAMS.modules.base.mapper.PondMapper;
+import com.Zx1nggg.FAMS.modules.base.mapper.PurchaseBatchMapper;
 import com.Zx1nggg.FAMS.modules.lifecycle.dto.PatrolLogDTO;
 import com.Zx1nggg.FAMS.modules.lifecycle.entity.PatrolLog;
 import com.Zx1nggg.FAMS.modules.lifecycle.mapper.PatrolLogMapper;
@@ -31,6 +33,9 @@ public class PatrolLogServiceImpl extends ServiceImpl<PatrolLogMapper, PatrolLog
 
     @Resource
     private FarmMapper farmMapper;
+
+    @Resource
+    private PurchaseBatchMapper purchaseBatchMapper;
 
     @Override
     public Page<PatrolLogVO> pageQuery(Integer pageNum, Integer pageSize,
@@ -81,6 +86,7 @@ public class PatrolLogServiceImpl extends ServiceImpl<PatrolLogMapper, PatrolLog
         if (pond == null) throw new BusinessException(404, "池塘不存在");
 
         checkFarmAccessByPond(pond);
+        assertBatchNotHarvested(dto.getBatchNo());
 
         PatrolLog log = new PatrolLog();
         BeanUtils.copyProperties(dto, log);
@@ -94,6 +100,7 @@ public class PatrolLogServiceImpl extends ServiceImpl<PatrolLogMapper, PatrolLog
         PatrolLog log = getById(id);
         if (log == null) return null;
         checkFarmAccess(log);
+        assertBatchNotHarvested(log.getBatchNo());
 
         Pond pond = pondMapper.selectById(dto.getPondId());
         if (pond == null) throw new BusinessException(404, "池塘不存在");
@@ -106,11 +113,14 @@ public class PatrolLogServiceImpl extends ServiceImpl<PatrolLogMapper, PatrolLog
 
     @Override
     public void batchDelete(List<Long> ids) {
+        List<PatrolLog> logs = listByIds(ids);
         if (SecurityUtils.isFarmer()) {
-            List<PatrolLog> logs = listByIds(ids);
             for (PatrolLog log : logs) {
                 checkFarmAccess(log);
             }
+        }
+        for (PatrolLog log : logs) {
+            assertBatchNotHarvested(log.getBatchNo());
         }
         removeByIds(ids);
     }
@@ -154,6 +164,20 @@ public class PatrolLogServiceImpl extends ServiceImpl<PatrolLogMapper, PatrolLog
             if (!userFarmId.equals(pond.getFarmId())) {
                 throw new BusinessException(403, "无权操作其他养殖场的数据");
             }
+        }
+    }
+
+    /**
+     * 已出库结算的批次禁止编辑/删除其关联的巡塘记录，保护历史数据完整性
+     */
+    private void assertBatchNotHarvested(String batchNo) {
+        if (batchNo == null || batchNo.isEmpty()) {
+            return; // 未关联批次的巡塘记录无需检查
+        }
+        PurchaseBatch batch = purchaseBatchMapper.selectOne(
+                new LambdaQueryWrapper<PurchaseBatch>().eq(PurchaseBatch::getBatchNo, batchNo));
+        if (batch != null && batch.getBatchStatus() != null && batch.getBatchStatus() == 3) {
+            throw new BusinessException(400, "关联批次已出库结算，历史巡塘数据不可编辑或删除");
         }
     }
 }

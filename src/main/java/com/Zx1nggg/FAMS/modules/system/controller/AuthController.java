@@ -120,7 +120,7 @@ public class AuthController {
         Map<String, Object> data = new HashMap<>();
         Map<String, Object> userInfo = new HashMap<>();
         userInfo.put("id", loginUser.getUser().getId());
-        userInfo.put("name", loginUser.getUser().getRealName());
+        userInfo.put("name", loginUser.getUser().getUsername());
         userInfo.put("role", loginUser.getUser().getUserType());
         userInfo.put("avatar", loginUser.getUser().getAvatar());
         data.put("user", userInfo);

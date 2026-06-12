@@ -10,6 +10,7 @@ import lombok.Setter;
 import lombok.ToString;
 
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 /**
@@ -101,6 +102,20 @@ public class PurchaseBatch implements Serializable {
     @Schema(description = "检疫证号")
     @TableField("quarantine_cert_no")
     private String quarantineCertNo;
+
+    /**
+     * 单价(元/件)
+     */
+    @TableField("unit_price")
+    @Schema(description = "单价(元/件)")
+    private BigDecimal unitPrice;
+
+    /**
+     * 总金额(元) = unitQty × unitPrice，自动计算
+     */
+    @TableField("total_amount")
+    @Schema(description = "总金额(元) = unitQty × unitPrice")
+    private BigDecimal totalAmount;
 
     @TableField("purchase_date")
     private LocalDate purchaseDate;

@@ -147,16 +147,19 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
         BeanUtils.copyProperties(dto, record);
         record.setOperatorId(SecurityUtils.getCurrentUserId());
 
-        // 7. 自动计算金额
+        // 7. 自动回填上游成本参考值（如果 DTO 未填入）
+        fillCostDefaults(dto, batch, pond);
+
+        // 8. 自动计算金额
         calculateAmounts(record, dto);
 
-        // 8. 自动生成溯源二维码 URL（预留）
+        // 9. 自动生成溯源二维码 URL（预留）
         record.setTraceQrCodeUrl("/trace/" + dto.getBatchNo());
         record.setTraceQueryCount(0);
 
         save(record);
 
-        // 9. 批次状态流转：养殖中 → 已出库结算
+        // 10. 批次状态流转：养殖中 → 已出库结算
         batch.setBatchStatus((byte) 3);
         purchaseBatchMapper.updateById(batch);
 
@@ -194,6 +197,9 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
         // 更新字段
         BeanUtils.copyProperties(dto, record);
         record.setId(id);
+
+        // 自动回填上游成本参考值（如果 DTO 未填入）
+        fillCostDefaults(dto, batch, pond);
 
         // 重新计算金额
         calculateAmounts(record, dto);
@@ -262,6 +268,9 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
             }
         }
 
+        // 苗种成本（采购批次总金额）
+        result.put("seedlingCost", batch.getTotalAmount());
+
         // 投放信息
         List<Stocking> stockings = stockingMapper.selectList(
                 new LambdaQueryWrapper<Stocking>().eq(Stocking::getBatchId, batchId));
@@ -298,6 +307,18 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
                             .map(f -> f.getFeedAmount() != null ? f.getFeedAmount() : BigDecimal.ZERO)
                             .reduce(BigDecimal.ZERO, BigDecimal::add);
                     result.put("totalFeedKg", totalFeed);
+
+                    // 饲料成本汇总
+                    BigDecimal totalFeedCost = feedLogs.stream()
+                            .map(f -> f.getFeedTotalAmount() != null ? f.getFeedTotalAmount() : BigDecimal.ZERO)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+                    result.put("totalFeedCost", totalFeedCost.compareTo(BigDecimal.ZERO) > 0 ? totalFeedCost : null);
+
+                    // 药品成本汇总
+                    BigDecimal totalMedicineCost = feedLogs.stream()
+                            .map(f -> f.getMedicineAmount() != null ? f.getMedicineAmount() : BigDecimal.ZERO)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+                    result.put("totalMedicineCost", totalMedicineCost.compareTo(BigDecimal.ZERO) > 0 ? totalMedicineCost : null);
                 }
             }
         }
@@ -346,6 +367,54 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
     }
 
     // ==================== Private Helpers ====================
+
+    /**
+     * 自动回填上游成本参考值：如果 DTO 中的成本字段为 null，
+     * 从采购批次金额和投喂日志中汇总填入。
+     */
+    private void fillCostDefaults(HarvestRecordDTO dto, PurchaseBatch batch, Pond pond) {
+        // 苗种成本：取采购批次总金额
+        if (dto.getSeedlingCost() == null && batch.getTotalAmount() != null) {
+            dto.setSeedlingCost(batch.getTotalAmount());
+        }
+
+        // 饲料成本 & 药品成本：从投喂日志汇总
+        if (dto.getFeedCost() == null || dto.getMedicineCost() == null) {
+            // 获取该批次的投放日期作为起始过滤
+            List<Stocking> stockings = stockingMapper.selectList(
+                    new LambdaQueryWrapper<Stocking>()
+                            .eq(Stocking::getBatchId, batch.getId())
+                            .eq(Stocking::getPondId, pond.getId()));
+            LocalDate stockingDate = stockings.stream()
+                    .map(Stocking::getStockingDate)
+                    .filter(Objects::nonNull)
+                    .min(LocalDate::compareTo)
+                    .orElse(null);
+
+            LambdaQueryWrapper<PondFeedLog> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(PondFeedLog::getPondId, pond.getId());
+            if (stockingDate != null) {
+                wrapper.ge(PondFeedLog::getLogDate, stockingDate);
+            }
+            List<PondFeedLog> feedLogs = pondFeedLogMapper.selectList(wrapper);
+
+            if (dto.getFeedCost() == null) {
+                BigDecimal feedCost = feedLogs.stream()
+                        .map(f -> f.getFeedTotalAmount() != null ? f.getFeedTotalAmount() : BigDecimal.ZERO)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                dto.setFeedCost(feedCost.compareTo(BigDecimal.ZERO) > 0
+                        ? feedCost.setScale(2, RoundingMode.HALF_UP) : null);
+            }
+
+            if (dto.getMedicineCost() == null) {
+                BigDecimal medicineCost = feedLogs.stream()
+                        .map(f -> f.getMedicineAmount() != null ? f.getMedicineAmount() : BigDecimal.ZERO)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                dto.setMedicineCost(medicineCost.compareTo(BigDecimal.ZERO) > 0
+                        ? medicineCost.setScale(2, RoundingMode.HALF_UP) : null);
+            }
+        }
+    }
 
     /**
      * 自动计算金额：总收入、总成本、净利润、结算状态

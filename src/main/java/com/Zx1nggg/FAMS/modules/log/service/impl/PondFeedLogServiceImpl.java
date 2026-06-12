@@ -16,6 +16,8 @@ import jakarta.annotation.Resource;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
@@ -79,6 +81,8 @@ public class PondFeedLogServiceImpl extends ServiceImpl<PondFeedLogMapper, PondF
         checkFarmAccessByPondId(dto.getPondId());
         PondFeedLog log = new PondFeedLog();
         BeanUtils.copyProperties(dto, log);
+        // 自动计算饲料金额
+        log.setFeedTotalAmount(calcFeedAmount(dto.getFeedAmount(), dto.getFeedUnitPrice()));
         save(log);
         return toVO(log);
     }
@@ -92,6 +96,8 @@ public class PondFeedLogServiceImpl extends ServiceImpl<PondFeedLogMapper, PondF
         checkFarmAccessByPondId(dto.getPondId());
         BeanUtils.copyProperties(dto, log);
         log.setId(id);
+        // 自动计算饲料金额
+        log.setFeedTotalAmount(calcFeedAmount(dto.getFeedAmount(), dto.getFeedUnitPrice()));
         updateById(log);
         return toVO(log);
     }
@@ -109,6 +115,16 @@ public class PondFeedLogServiceImpl extends ServiceImpl<PondFeedLogMapper, PondF
     }
 
     // ==================== private helpers ====================
+
+    /**
+     * 自动计算本次投喂金额
+     */
+    private BigDecimal calcFeedAmount(BigDecimal feedAmount, BigDecimal unitPrice) {
+        if (feedAmount == null || unitPrice == null) {
+            return null;
+        }
+        return feedAmount.multiply(unitPrice).setScale(2, RoundingMode.HALF_UP);
+    }
 
     /**
      * 🌟 数据隔离：校验 FARMER 是否有权操作该池塘所属农场

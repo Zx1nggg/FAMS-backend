@@ -16,4 +16,20 @@ public class PondFeedLogVO {
     private String feedBrand;
     private BigDecimal feedAmount;
     private String waterChangeStatus;
+
+    // ==================== 饲料成本 ====================
+
+    private BigDecimal feedUnitPrice;
+
+    private BigDecimal feedTotalAmount;
+
+    // ==================== 药品记录 ====================
+
+    private String medicineName;
+
+    private BigDecimal medicineDosage;
+
+    private String medicineUnit;
+
+    private BigDecimal medicineAmount;
 }

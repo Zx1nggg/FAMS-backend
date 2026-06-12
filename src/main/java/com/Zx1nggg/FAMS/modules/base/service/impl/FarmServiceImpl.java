@@ -126,6 +126,18 @@ public class FarmServiceImpl extends ServiceImpl<FarmMapper, Farm> implements IF
 
     @Override
     public void restore(List<Long> ids) {
+        List<Farm> farms = listByIds(ids);
+
+        // 🌟 数据隔离：FARMER 只能恢复自己的养殖场
+        if (SecurityUtils.isFarmer()) {
+            Long currentUserId = SecurityUtils.getCurrentUserId();
+            for (Farm farm : farms) {
+                if (!Objects.equals(farm.getUserId(), currentUserId)) {
+                    throw new BusinessException(403, "无权恢复养殖场 ID=" + farm.getId());
+                }
+            }
+        }
+
         // 恢复养殖场：直接用 LambdaUpdateWrapper 更新 is_deleted=0
         LambdaUpdateWrapper<Farm> farmUw = new LambdaUpdateWrapper<>();
         farmUw.in(Farm::getId, ids).set(Farm::getIsDeleted, 0);
@@ -135,15 +147,15 @@ public class FarmServiceImpl extends ServiceImpl<FarmMapper, Farm> implements IF
         pondService.restoreByFarmIds(ids);
 
         // 恢复后刷新相关用户的缓存
-        List<Farm> farms = listByIds(ids);
-        farms.stream()
+        Set<Long> affectedUsers = farms.stream()
                 .map(Farm::getUserId)
                 .filter(Objects::nonNull)
-                .forEach(userFarmCacheService::evictUserFarms);
+                .collect(Collectors.toSet());
+        affectedUsers.forEach(userFarmCacheService::evictUserFarms);
     }
 
     /**
-     * 🌟 数据隔离：校验 FARMER 是否拥有该养殖场的操作权限
+     *  数据隔离：校验 FARMER 是否拥有该养殖场的操作权限
      */
     private void checkFarmOwnership(Farm farm) {
         if (SecurityUtils.isFarmer()

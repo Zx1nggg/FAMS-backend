@@ -91,6 +91,7 @@ public class StockingServiceImpl extends ServiceImpl<StockingMapper, Stocking> i
         if (batch == null) {
             throw new BusinessException(404, "批次不存在");
         }
+        assertBatchNotHarvested(batch);
         Pond pond = pondMapper.selectById(dto.getPondId());
         if (pond == null) {
             throw new BusinessException(404, "池塘不存在");
@@ -143,10 +144,19 @@ public class StockingServiceImpl extends ServiceImpl<StockingMapper, Stocking> i
         }
         checkFarmAccess(stocking);
 
+        // 检查原始关联批次是否已出库（防止通过切换批次绕过锁定）
+        if (stocking.getBatchId() != null) {
+            PurchaseBatch originalBatch = purchaseBatchMapper.selectById(stocking.getBatchId());
+            if (originalBatch != null) {
+                assertBatchNotHarvested(originalBatch);
+            }
+        }
+
         PurchaseBatch batch = purchaseBatchMapper.selectById(dto.getBatchId());
         if (batch == null) {
             throw new BusinessException(404, "批次不存在");
         }
+        assertBatchNotHarvested(batch);
         Pond pond = pondMapper.selectById(dto.getPondId());
         if (pond == null) {
             throw new BusinessException(404, "池塘不存在");
@@ -175,11 +185,19 @@ public class StockingServiceImpl extends ServiceImpl<StockingMapper, Stocking> i
 
     @Override
     public void batchDelete(List<Long> ids) {
+        List<Stocking> stockings = listByIds(ids);
         if (SecurityUtils.isFarmer()) {
-            List<Stocking> stockings = listByIds(ids);
             Long userFarmId = SecurityUtils.getCurrentFarmId();
             for (Stocking stocking : stockings) {
                 checkFarmAccess(stocking);
+            }
+        }
+        for (Stocking stocking : stockings) {
+            if (stocking.getBatchId() != null) {
+                PurchaseBatch batch = purchaseBatchMapper.selectById(stocking.getBatchId());
+                if (batch != null) {
+                    assertBatchNotHarvested(batch);
+                }
             }
         }
         removeByIds(ids);
@@ -273,6 +291,15 @@ public class StockingServiceImpl extends ServiceImpl<StockingMapper, Stocking> i
             if (!userFarmId.equals(farmId)) {
                 throw new BusinessException(403, "无权操作其他养殖场的数据");
             }
+        }
+    }
+
+    /**
+     * 已出库结算的批次禁止新增/编辑/删除投放记录，保护历史数据完整性
+     */
+    private void assertBatchNotHarvested(PurchaseBatch batch) {
+        if (batch.getBatchStatus() != null && batch.getBatchStatus() == 3) {
+            throw new BusinessException(400, "该批次已出库结算，历史投放数据不可编辑或删除");
         }
     }
 }

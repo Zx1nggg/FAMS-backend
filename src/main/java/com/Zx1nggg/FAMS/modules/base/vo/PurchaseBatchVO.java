@@ -2,6 +2,7 @@ package com.Zx1nggg.FAMS.modules.base.vo;
 
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @Data
@@ -19,5 +20,11 @@ public class PurchaseBatchVO {
     private Integer estimatedTotalQty;
     private Byte batchStatus;
     private String quarantineCertNo;
+    /** 单价(元/件) */
+    private BigDecimal unitPrice;
+
+    /** 总金额(元) */
+    private BigDecimal totalAmount;
+
     private LocalDate purchaseDate;
 }

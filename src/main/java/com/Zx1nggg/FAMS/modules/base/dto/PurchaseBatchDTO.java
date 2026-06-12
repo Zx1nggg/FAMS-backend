@@ -3,6 +3,7 @@ package com.Zx1nggg.FAMS.modules.base.dto;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @Data
@@ -29,6 +30,9 @@ public class PurchaseBatchDTO {
     private Byte batchStatus;
 
     private String quarantineCertNo;
+
+    /** 单价(元/件) */
+    private BigDecimal unitPrice;
 
     private LocalDate purchaseDate;
 }

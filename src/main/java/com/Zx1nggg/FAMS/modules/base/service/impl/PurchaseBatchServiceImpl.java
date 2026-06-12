@@ -21,6 +21,8 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Service
@@ -70,6 +72,7 @@ public class PurchaseBatchServiceImpl extends ServiceImpl<PurchaseBatchMapper, P
         batch.setFarmId(resolveFarmId(dto.getFarmId()));
         batch.setBatchNo(generateBatchNo());
         batch.setEstimatedTotalQty(calcTotalQty(dto.getUnitQty(), dto.getDensityPerUnit()));
+        batch.setTotalAmount(calcTotalAmount(dto.getUnitQty(), dto.getUnitPrice()));
         save(batch);
         return toVO(batch);
     }
@@ -81,24 +84,29 @@ public class PurchaseBatchServiceImpl extends ServiceImpl<PurchaseBatchMapper, P
             return null;
         }
         checkFarmAccess(batch);
+        assertBatchNotHarvested(batch);
         BeanUtils.copyProperties(dto, batch);
         batch.setId(id);
         batch.setFarmId(resolveFarmId(dto.getFarmId()));
         batch.setEstimatedTotalQty(calcTotalQty(dto.getUnitQty(), dto.getDensityPerUnit()));
+        batch.setTotalAmount(calcTotalAmount(dto.getUnitQty(), dto.getUnitPrice()));
         updateById(batch);
         return toVO(batch);
     }
 
     @Override
     public void batchDelete(List<Long> ids) {
+        List<PurchaseBatch> batches = listByIds(ids);
         if (SecurityUtils.isFarmer()) {
-            List<PurchaseBatch> batches = listByIds(ids);
             Long userFarmId = SecurityUtils.getCurrentFarmId();
             for (PurchaseBatch batch : batches) {
                 if (!userFarmId.equals(batch.getFarmId())) {
                     throw new BusinessException(403, "无权删除不属于本养殖场的批次");
                 }
             }
+        }
+        for (PurchaseBatch batch : batches) {
+            assertBatchNotHarvested(batch);
         }
         removeByIds(ids);
     }
@@ -126,6 +134,15 @@ public class PurchaseBatchServiceImpl extends ServiceImpl<PurchaseBatchMapper, P
         List<PurchaseBatchVO> voList = page.getRecords().stream().map(this::toVO).toList();
         voPage.setRecords(voList);
         return voPage;
+    }
+
+    private BigDecimal calcTotalAmount(Integer unitQty, BigDecimal unitPrice) {
+        if (unitQty == null || unitPrice == null) {
+            return null;
+        }
+        return BigDecimal.valueOf(unitQty)
+                .multiply(unitPrice)
+                .setScale(2, RoundingMode.HALF_UP);
     }
 
     private int calcTotalQty(Integer unitQty, Integer densityPerUnit) {
@@ -167,6 +184,15 @@ public class PurchaseBatchServiceImpl extends ServiceImpl<PurchaseBatchMapper, P
             if (!userFarmId.equals(batch.getFarmId())) {
                 throw new BusinessException(403, "无权访问其他养殖场的数据");
             }
+        }
+    }
+
+    /**
+     * 已出库结算的批次禁止编辑/删除，保护历史数据完整性
+     */
+    private void assertBatchNotHarvested(PurchaseBatch batch) {
+        if (batch.getBatchStatus() != null && batch.getBatchStatus() == 3) {
+            throw new BusinessException(400, "该批次已出库结算，历史数据不可编辑或删除");
         }
     }
 }
