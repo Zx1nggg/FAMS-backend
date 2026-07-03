@@ -11,10 +11,11 @@ import lombok.Setter;
 import lombok.ToString;
 
 import java.io.Serializable;
+import java.math.BigDecimal;
 
 /**
  * <p>
- * 
+ *
  * </p>
  *
  * @author Zx1nggg
@@ -41,6 +42,27 @@ public class Farm implements Serializable {
     @TableField("farm_name")
     @Schema(description = "养殖场名称 (如: 顺德一区基地)")
     private String farmName;
+
+    /**
+     * 经度 (支撑监管方 GIS 地图)
+     */
+    @TableField("longitude")
+    @Schema(description = "经度")
+    private BigDecimal longitude;
+
+    /**
+     * 纬度 (支撑监管方 GIS 地图)
+     */
+    @TableField("latitude")
+    @Schema(description = "纬度")
+    private BigDecimal latitude;
+
+    /**
+     * 详细地址 (支撑监管方 GIS 地图)
+     */
+    @TableField("address")
+    @Schema(description = "详细地址")
+    private String address;
 
     @TableField("is_deleted")
     @TableLogic

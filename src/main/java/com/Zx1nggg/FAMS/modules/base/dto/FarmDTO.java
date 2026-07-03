@@ -2,6 +2,7 @@ package com.Zx1nggg.FAMS.modules.base.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
+import java.math.BigDecimal;
 
 @Data
 public class FarmDTO {
@@ -10,4 +11,10 @@ public class FarmDTO {
     private String farmName;
 
     private Long userId;
+
+    private BigDecimal longitude;
+
+    private BigDecimal latitude;
+
+    private String address;
 }

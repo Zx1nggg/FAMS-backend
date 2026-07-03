@@ -2,8 +2,12 @@ package com.Zx1nggg.FAMS.modules.iot.simulator;
 
 import com.Zx1nggg.FAMS.modules.base.entity.Pond;
 import com.Zx1nggg.FAMS.modules.base.mapper.PondMapper;
+import com.Zx1nggg.FAMS.modules.log.entity.AlarmActionLog;
 import com.Zx1nggg.FAMS.modules.log.entity.AlarmRecord;
+import com.Zx1nggg.FAMS.modules.log.entity.AlarmRule;
+import com.Zx1nggg.FAMS.modules.log.mapper.AlarmActionLogMapper;
 import com.Zx1nggg.FAMS.modules.log.mapper.AlarmRecordMapper;
+import com.Zx1nggg.FAMS.modules.log.mapper.AlarmRuleMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -27,10 +31,7 @@ import java.util.concurrent.TimeUnit;
  *   溶氧 = 6.5 + 1.5×sin(2π×(hour-10)/24) + noise(±0.3)  — 午16点最高~8.0，凌晨4点最低~5.0
  *   pH  = 7.5 + 0.3×sin(2π×(hour-12)/24) + noise(±0.15)  — 基本平稳
  *
- * 阈值告警：
- *   溶氧 < 3.5 mg/L  → 严重(3级) IOT_DO 告警
- *   水温 > 35°C      → 警告(2级) IOT_TEMP 告警
- *   pH  < 6.5 或 > 9.0 → 警告(2级) 告警
+ * 告警规则从 sys_alarm_rule 动态读取；异常持续期间聚合同一事件，恢复后自动解决。
  */
 @Slf4j
 @Component
@@ -39,19 +40,20 @@ public class IotDataSimulator {
     private static final String REDIS_LATEST_PREFIX = "iot:latest:";
     private static final String REDIS_LATEST_FARM_PREFIX = "iot:latest:farm:";
     private static final String REDIS_HISTORY_PREFIX = "iot:history:";
-    private static final String REDIS_ALARM_SENTINEL = "iot:alarm:sentinel:";
-
-    // 告警阈值
-    private static final double DO_CRITICAL = 3.5;
-    private static final double TEMP_CRITICAL = 35.0;
-    private static final double PH_LOW = 6.5;
-    private static final double PH_HIGH = 9.0;
+    private static final byte ALARM_PENDING = 0;
+    private static final byte ALARM_RESOLVED = 3;
 
     @Autowired
     private PondMapper pondMapper;
 
     @Autowired
     private AlarmRecordMapper alarmRecordMapper;
+
+    @Autowired
+    private AlarmRuleMapper alarmRuleMapper;
+
+    @Autowired
+    private AlarmActionLogMapper alarmActionLogMapper;
 
     @Autowired
     private RedisTemplate<String, String> redisTemplate;
@@ -75,12 +77,16 @@ public class IotDataSimulator {
         LocalDateTime now = LocalDateTime.now();
         int hour = now.getHour();
         int count = 0;
+        List<AlarmRule> iotRules = alarmRuleMapper.selectList(
+                new LambdaQueryWrapper<AlarmRule>()
+                        .eq(AlarmRule::getEnabled, (byte) 1)
+                        .eq(AlarmRule::getSourceType, "IOT"));
 
         for (Pond pond : ponds) {
             try {
                 Map<String, String> data = generateSensorData(pond, hour, now);
                 writeToRedis(pond, data);
-                checkAlarms(pond, data);
+                checkAlarms(pond, data, iotRules);
                 count++;
             } catch (Exception e) {
                 log.error("[IoT-Sim] 池塘 {} 模拟失败: {}", pond.getId(), e.getMessage());
@@ -161,60 +167,133 @@ public class IotDataSimulator {
 
     // ==================== 告警检查 ====================
 
-    private void checkAlarms(Pond pond, Map<String, String> data) {
-        double temp = Double.parseDouble(data.get("waterTemp"));
-        double doxy = Double.parseDouble(data.get("dissolvedOxygen"));
-        double ph = Double.parseDouble(data.get("phValue"));
+    private void checkAlarms(Pond pond, Map<String, String> data, List<AlarmRule> rules) {
+        Map<String, BigDecimal> metricValues = Map.of(
+                "water_temp", new BigDecimal(data.get("waterTemp")),
+                "dissolved_oxygen", new BigDecimal(data.get("dissolvedOxygen")),
+                "ph_value", new BigDecimal(data.get("phValue")));
 
-        if (doxy < DO_CRITICAL) {
-            fireAlarm(pond, "IOT_DO", (byte) 3,
-                    String.format("%s溶氧量低至 %.1f mg/L，低于安全阈值 %.1f mg/L，请立即开启增氧设备并检查水质！",
-                            pond.getPondName(), doxy, DO_CRITICAL));
-        }
-
-        if (temp > TEMP_CRITICAL) {
-            fireAlarm(pond, "IOT_TEMP", (byte) 2,
-                    String.format("%s水温高达 %.1f°C，超过警戒线 %.0f°C，建议加注低温新水或开启遮阳网！",
-                            pond.getPondName(), temp, TEMP_CRITICAL));
-        }
-
-        if (ph < PH_LOW) {
-            fireAlarm(pond, "IOT_PH", (byte) 2,
-                    String.format("%spH值降至 %.1f，低于安全下限 %.1f，建议泼洒生石灰调节酸碱度！",
-                            pond.getPondName(), ph, PH_LOW));
-        } else if (ph > PH_HIGH) {
-            fireAlarm(pond, "IOT_PH", (byte) 2,
-                    String.format("%spH值升至 %.1f，超过安全上限 %.1f，建议换水或使用有机酸调节！",
-                            pond.getPondName(), ph, PH_HIGH));
+        for (AlarmRule rule : rules) {
+            if (!appliesToPond(rule, pond)) continue;
+            BigDecimal value = metricValues.get(rule.getMetricCode());
+            if (value == null) continue;
+            if (matches(rule, value)) {
+                upsertAlarm(pond, rule, value);
+            } else {
+                recoverAlarm(pond, rule);
+            }
         }
     }
 
-    /**
-     * 触发告警（带 Redis 哨兵去重：同一池塘同类型告警 30 分钟内不重复）
-     */
-    private void fireAlarm(Pond pond, String alarmType, byte level, String content) {
-        String sentinelKey = REDIS_ALARM_SENTINEL + pond.getId() + ":" + alarmType;
-        Boolean exists = redisTemplate.hasKey(sentinelKey);
-        if (Boolean.TRUE.equals(exists)) {
-            return; // 30 分钟内已发过同类告警
-        }
-
-        AlarmRecord alarm = new AlarmRecord();
-        alarm.setFarmId(pond.getFarmId());
-        alarm.setAlarmLevel(level);
-        alarm.setAlarmType(alarmType);
-        alarm.setAlarmContent(content);
-        alarm.setIsHandled((byte) 0);
-        alarm.setCreateTime(LocalDateTime.now());
-        alarmRecordMapper.insert(alarm);
-
-        // 设置 30 分钟去重窗口
-        redisTemplate.opsForValue().set(sentinelKey, "1", 30, TimeUnit.MINUTES);
-
-        log.warn("[IoT-Alarm] {} 级告警 | 类型={} | {} | {}", level, alarmType,
-                pond.getPondName(), content.substring(0, Math.min(50, content.length())));
+    private boolean appliesToPond(AlarmRule rule, Pond pond) {
+        if ("GLOBAL".equals(rule.getScopeType())) return true;
+        return "FARM".equals(rule.getScopeType()) && Objects.equals(rule.getFarmId(), pond.getFarmId());
     }
 
+    private boolean matches(AlarmRule rule, BigDecimal value) {
+        if (rule.getThresholdOperator() == null || rule.getThresholdValue() == null) return false;
+        int low = value.compareTo(rule.getThresholdValue());
+        return switch (rule.getThresholdOperator()) {
+            case "LT" -> low < 0;
+            case "LE" -> low <= 0;
+            case "GT" -> low > 0;
+            case "GE" -> low >= 0;
+            case "EQ" -> low == 0;
+            case "BETWEEN" -> rule.getThresholdValueHigh() != null
+                    && low >= 0 && value.compareTo(rule.getThresholdValueHigh()) <= 0;
+            default -> false;
+        };
+    }
+
+    private void upsertAlarm(Pond pond, AlarmRule rule, BigDecimal value) {
+        String dedupKey = buildDedupKey(pond, rule);
+        LocalDateTime now = LocalDateTime.now();
+        AlarmRecord alarm = findActiveAlarm(dedupKey);
+        String message = buildAlarmMessage(pond, rule, value);
+
+        if (alarm == null) {
+            alarm = new AlarmRecord();
+            alarm.setFarmId(pond.getFarmId());
+            alarm.setPondId(pond.getId());
+            alarm.setRuleId(rule.getId());
+            alarm.setAlarmCode(rule.getAlarmCode());
+            alarm.setTitle(rule.getRuleName());
+            alarm.setMessage(message);
+            alarm.setSourceType("IOT");
+            alarm.setSeverity(rule.getSeverity());
+            alarm.setStatus(ALARM_PENDING);
+            alarm.setMetricCode(rule.getMetricCode());
+            alarm.setTriggerValue(value);
+            alarm.setThresholdOperator(rule.getThresholdOperator());
+            alarm.setThresholdValue(rule.getThresholdValue());
+            alarm.setThresholdValueHigh(rule.getThresholdValueHigh());
+            alarm.setMetricUnit(rule.getMetricUnit());
+            alarm.setDedupKey(dedupKey);
+            alarm.setOccurrenceCount(1);
+            alarm.setFirstOccurredAt(now);
+            alarm.setLastOccurredAt(now);
+            alarmRecordMapper.insert(alarm);
+            log.warn("[IoT-Alarm] 新告警 | {} | {} | {}", rule.getAlarmCode(), pond.getPondName(), message);
+            return;
+        }
+
+        alarm.setTriggerValue(value);
+        alarm.setMessage(message);
+        alarm.setSeverity(rule.getSeverity());
+        alarm.setLastOccurredAt(now);
+        alarm.setOccurrenceCount((alarm.getOccurrenceCount() == null ? 0 : alarm.getOccurrenceCount()) + 1);
+        alarmRecordMapper.updateById(alarm);
+    }
+
+    private void recoverAlarm(Pond pond, AlarmRule rule) {
+        AlarmRecord alarm = findActiveAlarm(buildDedupKey(pond, rule));
+        if (alarm == null) return;
+
+        LocalDateTime now = LocalDateTime.now();
+        byte previous = alarm.getStatus();
+        alarm.setStatus(ALARM_RESOLVED);
+        alarm.setRecoveredAt(now);
+        alarm.setResolvedAt(now);
+        alarm.setResolutionRemark("监测指标已自动恢复正常");
+        alarmRecordMapper.updateById(alarm);
+
+        AlarmActionLog action = new AlarmActionLog();
+        action.setAlarmId(alarm.getId());
+        action.setActionType("AUTO_RECOVER");
+        action.setFromStatus(previous);
+        action.setToStatus(ALARM_RESOLVED);
+        action.setActionRemark("监测指标已自动恢复正常");
+        action.setCreatedAt(now);
+        alarmActionLogMapper.insert(action);
+    }
+
+    private AlarmRecord findActiveAlarm(String dedupKey) {
+        return alarmRecordMapper.selectOne(
+                new LambdaQueryWrapper<AlarmRecord>()
+                        .eq(AlarmRecord::getDedupKey, dedupKey)
+                        .in(AlarmRecord::getStatus, 0, 1, 2)
+                        .last("LIMIT 1"));
+    }
+
+    private String buildDedupKey(Pond pond, AlarmRule rule) {
+        return pond.getFarmId() + ":" + pond.getId() + ":" + rule.getAlarmCode() + ":" + rule.getMetricCode();
+    }
+
+    private String buildAlarmMessage(Pond pond, AlarmRule rule, BigDecimal value) {
+        String unit = rule.getMetricUnit() == null ? "" : " " + rule.getMetricUnit();
+        return String.format("%s%s当前值为 %s%s，触发规则“%s”",
+                pond.getPondName(), metricLabel(rule.getMetricCode()), value.stripTrailingZeros().toPlainString(),
+                unit, rule.getRuleName());
+    }
+
+    private String metricLabel(String metricCode) {
+        return switch (metricCode) {
+            case "dissolved_oxygen" -> "溶解氧";
+            case "water_temp" -> "水温";
+            case "ph_value" -> "pH";
+            default -> metricCode;
+        };
+    }
     // ==================== 工具方法 ====================
 
     private double clamp(double val, double min, double max) {

@@ -1,22 +1,43 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.Zx1nggg.FAMS.modules.log.mapper.AlarmRecordMapper">
-
-    <!-- 通用查询映射结果 -->
     <resultMap id="BaseResultMap" type="com.Zx1nggg.FAMS.modules.log.entity.AlarmRecord">
-        <id column="id" property="id" />
-        <result column="farm_id" property="farmId" />
-        <result column="alarm_level" property="alarmLevel" />
-        <result column="alarm_type" property="alarmType" />
-        <result column="alarm_content" property="alarmContent" />
-        <result column="is_handled" property="isHandled" />
-        <result column="handle_time" property="handleTime" />
-        <result column="create_time" property="createTime" />
+        <id column="id" property="id"/>
+        <result column="farm_id" property="farmId"/>
+        <result column="pond_id" property="pondId"/>
+        <result column="rule_id" property="ruleId"/>
+        <result column="alarm_code" property="alarmCode"/>
+        <result column="title" property="title"/>
+        <result column="message" property="message"/>
+        <result column="source_type" property="sourceType"/>
+        <result column="source_id" property="sourceId"/>
+        <result column="severity" property="severity"/>
+        <result column="status" property="status"/>
+        <result column="metric_code" property="metricCode"/>
+        <result column="trigger_value" property="triggerValue"/>
+        <result column="threshold_operator" property="thresholdOperator"/>
+        <result column="threshold_value" property="thresholdValue"/>
+        <result column="threshold_value_high" property="thresholdValueHigh"/>
+        <result column="metric_unit" property="metricUnit"/>
+        <result column="dedup_key" property="dedupKey"/>
+        <result column="occurrence_count" property="occurrenceCount"/>
+        <result column="first_occurred_at" property="firstOccurredAt"/>
+        <result column="last_occurred_at" property="lastOccurredAt"/>
+        <result column="acknowledged_by" property="acknowledgedBy"/>
+        <result column="acknowledged_at" property="acknowledgedAt"/>
+        <result column="resolved_by" property="resolvedBy"/>
+        <result column="resolved_at" property="resolvedAt"/>
+        <result column="resolution_remark" property="resolutionRemark"/>
+        <result column="recovered_at" property="recoveredAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
     </resultMap>
 
-    <!-- 通用查询结果列 -->
     <sql id="Base_Column_List">
-        id, farm_id, alarm_level, alarm_type, alarm_content, is_handled, handle_time, create_time
+        id, farm_id, pond_id, rule_id, alarm_code, title, message, source_type, source_id,
+        severity, status, metric_code, trigger_value, threshold_operator, threshold_value,
+        threshold_value_high, metric_unit, dedup_key, occurrence_count, first_occurred_at,
+        last_occurred_at, acknowledged_by, acknowledged_at, resolved_by, resolved_at,
+        resolution_remark, recovered_at, created_at, updated_at
     </sql>
-
 </mapper>
