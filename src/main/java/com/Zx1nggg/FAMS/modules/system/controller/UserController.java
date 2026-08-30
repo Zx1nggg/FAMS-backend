@@ -5,6 +5,7 @@ import com.Zx1nggg.FAMS.common.api.Result;
 import com.Zx1nggg.FAMS.modules.system.dto.UpdateUserProfileDTO;
 import com.Zx1nggg.FAMS.modules.system.service.IUserService;
 import com.Zx1nggg.FAMS.modules.system.vo.UserProfileVO;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.Zx1nggg.FAMS.security.util.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -18,6 +19,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
 import java.util.UUID;
 
 @Tag(name = "用户个人主页")
@@ -48,6 +50,33 @@ public class UserController {
         UserProfileVO vo = userService.updateProfile(userId, dto);
         if (vo == null) return Result.error(404, "用户不存在");
         return Result.success(vo);
+    }
+
+    @Operation(summary = "分页查询用户列表（管理员）")
+    @GetMapping("/list")
+    public Result<Page<UserProfileVO>> listUsers(
+            @RequestParam(defaultValue = "1") Integer pageNum,
+            @RequestParam(defaultValue = "10") Integer pageSize,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String userType,
+            @RequestParam(required = false) Byte status) {
+        return Result.success(userService.pageUsers(pageNum, pageSize, keyword, userType, status));
+    }
+
+    @Log(title = "用户账号运维", businessType = 2)
+    @Operation(summary = "启用或停用用户账号（管理员）")
+    @PutMapping("/{id}/status")
+    public Result<String> updateStatus(@PathVariable Long id, @RequestParam Byte status) {
+        userService.updateUserStatus(id, status);
+        return Result.success("账号状态已更新");
+    }
+
+    @Log(title = "用户账号运维", businessType = 3)
+    @Operation(summary = "删除用户账号（管理员）")
+    @DeleteMapping("/{ids}")
+    public Result<String> deleteUsers(@PathVariable List<Long> ids) {
+        userService.deleteUsers(ids);
+        return Result.success("删除成功");
     }
 
     @Log(title = "用户头像", businessType = 2)

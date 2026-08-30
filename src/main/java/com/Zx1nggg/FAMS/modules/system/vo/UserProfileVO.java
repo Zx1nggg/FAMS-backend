@@ -13,5 +13,6 @@ public class UserProfileVO {
     private String address;
     private String avatar;
     private String userType;
+    private Long farmId;
     private Byte status;
 }

@@ -10,11 +10,12 @@
         <result column="contact_phone" property="contactPhone" />
         <result column="qualification_code" property="qualificationCode" />
         <result column="create_time" property="createTime" />
+        <result column="user_id" property="userId" />
     </resultMap>
 
     <!-- 通用查询结果列 -->
     <sql id="Base_Column_List">
-        id, supplier_name, contact_person, contact_phone, qualification_code, create_time
+        id, supplier_name, contact_person, contact_phone, qualification_code, create_time, user_id
     </sql>
 
 </mapper>

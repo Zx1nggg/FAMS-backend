@@ -14,6 +14,8 @@ public final class SecurityUtils {
     private static final String KEY_USER_TYPE = "currentUserType";
 
     public static final String ROLE_FARMER = "FARMER";
+    public static final String ROLE_REGULATOR = "REGULATOR";
+    public static final String ROLE_ADMIN = "ADMIN";
 
     private SecurityUtils() {
     }
@@ -38,5 +40,13 @@ public final class SecurityUtils {
 
     public static boolean isFarmer() {
         return ROLE_FARMER.equals(getCurrentUserType());
+    }
+
+    public static boolean isRegulator() {
+        return ROLE_REGULATOR.equals(getCurrentUserType());
+    }
+
+    public static boolean isAdmin() {
+        return ROLE_ADMIN.equals(getCurrentUserType());
     }
 }

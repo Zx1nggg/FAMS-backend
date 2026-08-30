@@ -4,11 +4,13 @@ package com.Zx1nggg.FAMS;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.Zx1nggg.FAMS.modules.system.entity.User;
 import com.Zx1nggg.FAMS.modules.system.service.IUserService;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.mindrot.jbcrypt.BCrypt;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+@Disabled("手动初始化数据脚本，会清空 sys_user，禁止随 mvn test 自动执行")
 @SpringBootTest
 public class InitDataTest {
 
