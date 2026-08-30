@@ -20,6 +20,8 @@ public interface IRegulatorService {
 
     TraceChainVO getTraceDetail(String batchNo);
 
+    Page<TraceBatchVO> listTraceBatches(Integer pageNum, Integer pageSize, Long farmId, Byte batchStatus, String keyword);
+
     AlertStatsVO getAlertStats();
 
     Page<AlarmRecordVO> listAlerts(Integer pageNum, Integer pageSize, Long farmId, Byte severity,

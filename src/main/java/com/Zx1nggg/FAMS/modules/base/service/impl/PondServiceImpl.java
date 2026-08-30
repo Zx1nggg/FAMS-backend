@@ -11,13 +11,23 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Objects;
 
 @Service
 public class PondServiceImpl extends ServiceImpl<PondMapper, Pond> implements IPondService {
+
+    private static final String REDIS_LATEST_PREFIX = "iot:latest:";
+    private static final String REDIS_LATEST_FARM_PREFIX = "iot:latest:farm:";
+    private static final String REDIS_HISTORY_PREFIX = "iot:history:";
+
+    @Autowired
+    private RedisTemplate<String, String> redisTemplate;
 
     @Override
     public Page<PondVO> pageQuery(Integer pageNum, Integer pageSize, Long farmId, String pondName) {
@@ -79,7 +89,9 @@ public class PondServiceImpl extends ServiceImpl<PondMapper, Pond> implements IP
                 }
             }
         }
+        List<Pond> ponds = listByIds(ids);
         removeByIds(ids);
+        cleanupIotCache(ponds);
     }
 
     @Override
@@ -90,6 +102,7 @@ public class PondServiceImpl extends ServiceImpl<PondMapper, Pond> implements IP
         if (!ponds.isEmpty()) {
             List<Long> pondIds = ponds.stream().map(Pond::getId).toList();
             removeByIds(pondIds);
+            cleanupIotCache(ponds);
         }
     }
 
@@ -131,5 +144,23 @@ public class PondServiceImpl extends ServiceImpl<PondMapper, Pond> implements IP
                 throw new BusinessException(403, "无权访问其他养殖场的数据");
             }
         }
+    }
+
+    private void cleanupIotCache(List<Pond> ponds) {
+        if (ponds == null || ponds.isEmpty()) return;
+        for (Pond pond : ponds) {
+            if (pond.getId() != null) {
+                redisTemplate.delete(REDIS_LATEST_PREFIX + pond.getId());
+                redisTemplate.delete(REDIS_HISTORY_PREFIX + pond.getId());
+            }
+            if (pond.getFarmId() != null) {
+                redisTemplate.delete(REDIS_LATEST_FARM_PREFIX + pond.getFarmId());
+            }
+        }
+        ponds.stream()
+                .map(Pond::getFarmId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .forEach(farmId -> redisTemplate.delete(REDIS_LATEST_FARM_PREFIX + farmId));
     }
 }

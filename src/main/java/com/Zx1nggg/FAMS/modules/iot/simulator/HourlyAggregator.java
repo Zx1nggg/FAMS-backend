@@ -47,7 +47,9 @@ public class HourlyAggregator {
      */
     @Scheduled(cron = "0 1 * * * ?")
     public void aggregate() {
-        List<Pond> ponds = pondMapper.selectList(null);
+        List<Pond> ponds = pondMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Pond>()
+                        .eq(Pond::getIsDeleted, 0));
         if (ponds.isEmpty()) return;
 
         int count = 0;

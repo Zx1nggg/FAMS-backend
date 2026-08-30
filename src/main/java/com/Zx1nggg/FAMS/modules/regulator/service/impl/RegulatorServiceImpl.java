@@ -202,6 +202,23 @@ public class RegulatorServiceImpl implements IRegulatorService {
     }
 
     @Override
+    public Page<TraceBatchVO> listTraceBatches(Integer pageNum, Integer pageSize, Long farmId, Byte batchStatus, String keyword) {
+        int current = pageNum == null || pageNum <= 0 ? 1 : pageNum;
+        int size = pageSize == null || pageSize <= 0 ? 10 : Math.min(pageSize, 100);
+
+        LambdaQueryWrapper<PurchaseBatch> wrapper = new LambdaQueryWrapper<>();
+        if (farmId != null) wrapper.eq(PurchaseBatch::getFarmId, farmId);
+        if (batchStatus != null) wrapper.eq(PurchaseBatch::getBatchStatus, batchStatus);
+        if (keyword != null && !keyword.isBlank()) wrapper.like(PurchaseBatch::getBatchNo, keyword.trim());
+        wrapper.orderByDesc(PurchaseBatch::getPurchaseDate).orderByDesc(PurchaseBatch::getId);
+
+        Page<PurchaseBatch> page = purchaseBatchMapper.selectPage(new Page<>(current, size), wrapper);
+        Page<TraceBatchVO> voPage = new Page<>(page.getCurrent(), page.getSize(), page.getTotal());
+        voPage.setRecords(page.getRecords().stream().map(this::toTraceBatchVO).toList());
+        return voPage;
+    }
+
+    @Override
     public AlertStatsVO getAlertStats() {
         List<AlarmRecord> alarms = alarmRecordMapper.selectList(null);
         LocalDate today = LocalDate.now();
@@ -441,6 +458,23 @@ public class RegulatorServiceImpl implements IRegulatorService {
         node.setNodeTime(time);
         node.setDetail(detail);
         return node;
+    }
+
+    private TraceBatchVO toTraceBatchVO(PurchaseBatch batch) {
+        TraceBatchVO vo = new TraceBatchVO();
+        vo.setId(batch.getId());
+        vo.setFarmId(batch.getFarmId());
+        vo.setBatchNo(batch.getBatchNo());
+        vo.setSeedlingName(seedlingName(batch.getSeedlingId()));
+        vo.setEstimatedTotalQty(batch.getEstimatedTotalQty());
+        vo.setBatchStatus(batch.getBatchStatus());
+        vo.setPurchaseDate(batch.getPurchaseDate());
+
+        Farm farm = batch.getFarmId() == null ? null : farmMapper.selectById(batch.getFarmId());
+        Supplier supplier = batch.getSupplierId() == null ? null : supplierMapper.selectById(batch.getSupplierId());
+        vo.setFarmName(farm == null ? null : farm.getFarmName());
+        vo.setSupplierName(supplier == null ? null : supplier.getSupplierName());
+        return vo;
     }
 
     private int countRecentAbnormalDeaths(Long farmId, LocalDate since) {

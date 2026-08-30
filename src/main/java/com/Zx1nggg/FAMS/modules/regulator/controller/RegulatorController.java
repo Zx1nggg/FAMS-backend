@@ -103,4 +103,15 @@ public class RegulatorController {
     public Result<TraceChainVO> getTraceDetail(@RequestParam String batchNo) {
         return Result.success(regulatorService.getTraceDetail(batchNo));
     }
+
+    @Operation(summary = "Trace batch list")
+    @GetMapping("/trace/batches")
+    public Result<Page<TraceBatchVO>> listTraceBatches(
+            @RequestParam(defaultValue = "1") Integer pageNum,
+            @RequestParam(defaultValue = "10") Integer pageSize,
+            @RequestParam(required = false) Long farmId,
+            @RequestParam(required = false) Byte batchStatus,
+            @RequestParam(required = false) String keyword) {
+        return Result.success(regulatorService.listTraceBatches(pageNum, pageSize, farmId, batchStatus, keyword));
+    }
 }

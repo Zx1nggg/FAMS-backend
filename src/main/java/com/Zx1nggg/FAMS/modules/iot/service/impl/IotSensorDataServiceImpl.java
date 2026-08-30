@@ -46,6 +46,11 @@ public class IotSensorDataServiceImpl
 
     @Override
     public IotSensorDataVO getLatestByPondId(Long pondId) {
+        Pond pond = getActivePond(pondId);
+        if (pond == null) {
+            cleanupPondCache(pondId, null);
+            return null;
+        }
         // 1. 先查 Redis Hash
         Map<Object, Object> hash = redisTemplate.opsForHash().entries(REDIS_LATEST_PREFIX + pondId);
         if (hash != null && !hash.isEmpty()) {
@@ -74,7 +79,9 @@ public class IotSensorDataServiceImpl
 
         // 2. Redis miss → 批量查各塘最新（最多一次 MySQL）
         List<Pond> ponds = pondMapper.selectList(
-                new LambdaQueryWrapper<Pond>().eq(Pond::getFarmId, farmId));
+                new LambdaQueryWrapper<Pond>()
+                        .eq(Pond::getFarmId, farmId)
+                        .eq(Pond::getIsDeleted, 0));
         List<IotSensorDataVO> result = new ArrayList<>();
 
         for (Pond pond : ponds) {
@@ -96,6 +103,11 @@ public class IotSensorDataServiceImpl
 
     @Override
     public List<IotSensorDataVO> getHistory(Long pondId, int hours) {
+        Pond pond = getActivePond(pondId);
+        if (pond == null) {
+            cleanupPondCache(pondId, null);
+            return List.of();
+        }
         if (hours <= 24) {
             // Redis ZSET 分钟级精度
             return getHistoryFromRedis(pondId, hours);
@@ -123,6 +135,24 @@ public class IotSensorDataServiceImpl
             if (vo != null) list.add(vo);
         }
         return list;
+    }
+
+    private Pond getActivePond(Long pondId) {
+        if (pondId == null) return null;
+        return pondMapper.selectOne(new LambdaQueryWrapper<Pond>()
+                .eq(Pond::getId, pondId)
+                .eq(Pond::getIsDeleted, 0)
+                .last("LIMIT 1"));
+    }
+
+    private void cleanupPondCache(Long pondId, Long farmId) {
+        if (pondId != null) {
+            redisTemplate.delete(REDIS_LATEST_PREFIX + pondId);
+            redisTemplate.delete(REDIS_HISTORY_PREFIX + pondId);
+        }
+        if (farmId != null) {
+            redisTemplate.delete(REDIS_LATEST_FARM_PREFIX + farmId);
+        }
     }
 
     // ==================== MySQL 历史查询 ====================

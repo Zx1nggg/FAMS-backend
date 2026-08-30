@@ -7,11 +7,15 @@
         <id column="id" property="id" />
         <result column="user_id" property="userId" />
         <result column="farm_name" property="farmName" />
+        <result column="longitude" property="longitude" />
+        <result column="latitude" property="latitude" />
+        <result column="address" property="address" />
+        <result column="is_deleted" property="isDeleted" />
     </resultMap>
 
     <!-- 通用查询结果列 -->
     <sql id="Base_Column_List">
-        id, user_id, farm_name
+        id, user_id, farm_name, longitude, latitude, address, is_deleted
     </sql>
 
 </mapper>
