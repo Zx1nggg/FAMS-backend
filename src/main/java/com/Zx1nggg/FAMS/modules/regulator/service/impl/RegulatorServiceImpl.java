@@ -21,10 +21,19 @@ import com.Zx1nggg.FAMS.modules.regulator.service.IRegulatorService;
 import com.Zx1nggg.FAMS.modules.regulator.vo.*;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.Font;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
@@ -324,6 +333,139 @@ public class RegulatorServiceImpl implements IRegulatorService {
         }
     }
 
+    @Override
+    public List<SurvivalRateVO> getSurvivalRate(LocalDate startDate, LocalDate endDate, Long farmId, Long seedlingId, String groupBy) {
+        String dim = groupBy == null || groupBy.isBlank() ? "batch" : groupBy.trim().toLowerCase();
+        if (!Set.of("batch", "farm", "seedling").contains(dim)) {
+            throw new BusinessException(400, "groupBy only supports batch/farm/seedling");
+        }
+
+        Map<String, SurvivalAccumulator> grouped = new LinkedHashMap<>();
+        for (BatchSurvivalSnapshot snapshot : buildSurvivalSnapshots(startDate, endDate, farmId, seedlingId)) {
+            String key = switch (dim) {
+                case "farm" -> String.valueOf(snapshot.farmId);
+                case "seedling" -> String.valueOf(snapshot.seedlingId);
+                default -> snapshot.batchNo;
+            };
+            String label = switch (dim) {
+                case "farm" -> blankToDash(snapshot.farmName);
+                case "seedling" -> blankToDash(snapshot.seedlingName);
+                default -> snapshot.batchNo;
+            };
+            grouped.computeIfAbsent(key, k -> new SurvivalAccumulator(k, label)).add(snapshot);
+        }
+
+        return grouped.values().stream()
+                .map(SurvivalAccumulator::toVO)
+                .sorted(Comparator.comparing(SurvivalRateVO::getSurvivalRate, Comparator.nullsLast(Comparator.reverseOrder())))
+                .toList();
+    }
+
+    @Override
+    public List<SurvivalTrendVO> getSurvivalTrend(LocalDate startDate, LocalDate endDate, Long farmId, Long seedlingId) {
+        Map<String, List<BatchSurvivalSnapshot>> byMonth = buildSurvivalSnapshots(startDate, endDate, farmId, seedlingId)
+                .stream()
+                .collect(Collectors.groupingBy(item -> item.analysisDate == null ? "未知月份" : YearMonth.from(item.analysisDate).toString(),
+                        LinkedHashMap::new, Collectors.toList()));
+        return byMonth.entrySet().stream().map(entry -> {
+            List<BigDecimal> rates = entry.getValue().stream()
+                    .map(item -> item.survivalRate)
+                    .filter(Objects::nonNull)
+                    .toList();
+            SurvivalTrendVO vo = new SurvivalTrendVO();
+            vo.setMonth(entry.getKey());
+            vo.setBatchCount(entry.getValue().size());
+            vo.setAvgSurvivalRate(avg(rates));
+            vo.setMaxRate(rates.stream().max(BigDecimal::compareTo).orElse(BigDecimal.ZERO));
+            vo.setMinRate(rates.stream().min(BigDecimal::compareTo).orElse(BigDecimal.ZERO));
+            return vo;
+        }).sorted(Comparator.comparing(SurvivalTrendVO::getMonth)).toList();
+    }
+
+    @Override
+    public ProductionStatsVO getProductionStats(LocalDate startDate, LocalDate endDate, Long farmId, Long seedlingId) {
+        List<ProductionSnapshot> snapshots = buildProductionSnapshots(startDate, endDate, farmId, seedlingId);
+        ProductionStatsVO vo = new ProductionStatsVO();
+        vo.setTotalProductionKg(sum(snapshots.stream().map(item -> item.totalProductionKg).toList()));
+        vo.setTotalRevenue(sum(snapshots.stream().map(item -> item.totalRevenue).toList()));
+        vo.setTotalCost(sum(snapshots.stream().map(item -> item.totalCost).toList()));
+        vo.setNetProfit(sum(snapshots.stream().map(item -> item.netProfit).toList()));
+        vo.setHarvestCount(snapshots.size());
+        vo.setParticipatingFarmCount((int) snapshots.stream().map(item -> item.farmId).filter(Objects::nonNull).distinct().count());
+        vo.setAvgUnitPrice(weightedAvgUnitPrice(snapshots));
+        return vo;
+    }
+
+    @Override
+    public List<ProductionRankingVO> getProductionRanking(LocalDate startDate, LocalDate endDate, Long farmId, Long seedlingId, Integer limit) {
+        Map<Long, List<ProductionSnapshot>> grouped = buildProductionSnapshots(startDate, endDate, farmId, seedlingId)
+                .stream()
+                .filter(item -> item.farmId != null)
+                .collect(Collectors.groupingBy(item -> item.farmId, LinkedHashMap::new, Collectors.toList()));
+        int max = limit == null || limit <= 0 ? 10 : Math.min(limit, 100);
+        List<ProductionRankingVO> rows = grouped.entrySet().stream().map(entry -> {
+            List<ProductionSnapshot> items = entry.getValue();
+            ProductionRankingVO vo = new ProductionRankingVO();
+            vo.setFarmId(entry.getKey());
+            vo.setFarmName(items.stream().map(item -> item.farmName).filter(Objects::nonNull).findFirst().orElse("未知养殖场"));
+            vo.setTotalProductionKg(sum(items.stream().map(item -> item.totalProductionKg).toList()));
+            vo.setTotalRevenue(sum(items.stream().map(item -> item.totalRevenue).toList()));
+            vo.setNetProfit(sum(items.stream().map(item -> item.netProfit).toList()));
+            vo.setHarvestCount(items.size());
+            return vo;
+        }).sorted(Comparator.comparing(ProductionRankingVO::getTotalProductionKg, Comparator.nullsLast(Comparator.reverseOrder())))
+                .limit(max)
+                .toList();
+        for (int i = 0; i < rows.size(); i++) {
+            rows.get(i).setRanking(i + 1);
+        }
+        return rows;
+    }
+
+    @Override
+    public byte[] exportAnalysis(String type, LocalDate startDate, LocalDate endDate, Long farmId, Long seedlingId) {
+        String exportType = type == null || type.isBlank() ? "all" : type.trim().toLowerCase();
+        if (!Set.of("all", "survival", "production").contains(exportType)) {
+            throw new BusinessException(400, "type only supports all/survival/production");
+        }
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            CellStyle headerStyle = workbook.createCellStyle();
+            Font headerFont = workbook.createFont();
+            headerFont.setBold(true);
+            headerStyle.setFont(headerFont);
+
+            if ("all".equals(exportType) || "survival".equals(exportType)) {
+                XSSFSheet sheet = workbook.createSheet("成活率统计");
+                writeRow(sheet, 0, headerStyle, "维度", "养殖场", "苗种", "投放尾数", "估算出塘尾数", "死亡尾数", "成活率(%)", "收获重量(kg)", "批次数");
+                List<SurvivalRateVO> rows = getSurvivalRate(startDate, endDate, farmId, seedlingId, "batch");
+                for (int i = 0; i < rows.size(); i++) {
+                    SurvivalRateVO row = rows.get(i);
+                    writeRow(sheet, i + 1, null,
+                            row.getDimLabel(), row.getFarmName(), row.getSeedlingName(), row.getStockedQty(),
+                            row.getEstimatedHarvestQty(), row.getDeathQty(), row.getSurvivalRate(),
+                            row.getTotalHarvestWeightKg(), row.getBatchCount());
+                }
+                autosize(sheet, 9);
+            }
+            if ("all".equals(exportType) || "production".equals(exportType)) {
+                XSSFSheet sheet = workbook.createSheet("产量统计");
+                writeRow(sheet, 0, headerStyle, "排名", "养殖场", "产量(kg)", "产值(元)", "净利润(元)", "出塘批次");
+                List<ProductionRankingVO> rows = getProductionRanking(startDate, endDate, farmId, seedlingId, 100);
+                for (int i = 0; i < rows.size(); i++) {
+                    ProductionRankingVO row = rows.get(i);
+                    writeRow(sheet, i + 1, null, row.getRanking(), row.getFarmName(), row.getTotalProductionKg(),
+                            row.getTotalRevenue(), row.getNetProfit(), row.getHarvestCount());
+                }
+                autosize(sheet, 6);
+            }
+            workbook.write(output);
+            return output.toByteArray();
+        } catch (IOException e) {
+            throw new BusinessException(500, "导出报表失败");
+        }
+    }
+
     private TraceChainVO buildTraceChain(PurchaseBatch batch) {
         TraceChainVO chain = new TraceChainVO();
         chain.setBatchNo(batch.getBatchNo());
@@ -586,6 +728,253 @@ public class RegulatorServiceImpl implements IRegulatorService {
         vo.setThresholdMax(max);
         vo.setDataTime(data.getCollectTime());
         result.add(vo);
+    }
+
+    private List<BatchSurvivalSnapshot> buildSurvivalSnapshots(LocalDate startDate, LocalDate endDate, Long farmId, Long seedlingId) {
+        LambdaQueryWrapper<PurchaseBatch> wrapper = new LambdaQueryWrapper<>();
+        if (farmId != null) wrapper.eq(PurchaseBatch::getFarmId, farmId);
+        if (seedlingId != null) wrapper.eq(PurchaseBatch::getSeedlingId, seedlingId);
+        if (startDate != null) wrapper.ge(PurchaseBatch::getPurchaseDate, startDate);
+        if (endDate != null) wrapper.le(PurchaseBatch::getPurchaseDate, endDate);
+        wrapper.orderByDesc(PurchaseBatch::getPurchaseDate).orderByDesc(PurchaseBatch::getId);
+
+        List<BatchSurvivalSnapshot> result = new ArrayList<>();
+        for (PurchaseBatch batch : purchaseBatchMapper.selectList(wrapper)) {
+            List<Stocking> stockings = stockingMapper.selectList(new LambdaQueryWrapper<Stocking>()
+                    .eq(Stocking::getBatchId, batch.getId())
+                    .eq(Stocking::getIsDeleted, 0));
+            long stockedQty = stockings.stream().mapToLong(item -> item.getStockedQty() == null ? 0L : item.getStockedQty()).sum();
+            if (stockedQty <= 0 && batch.getEstimatedTotalQty() != null) stockedQty = batch.getEstimatedTotalQty();
+            if (stockedQty <= 0) continue;
+
+            List<BatchGrowthLog> growthLogs = batchGrowthLogMapper.selectList(new LambdaQueryWrapper<BatchGrowthLog>()
+                    .eq(BatchGrowthLog::getBatchNo, batch.getBatchNo()));
+            long deathQty = growthLogs.stream().mapToLong(item ->
+                    (item.getRoutineDeathCount() == null ? 0L : item.getRoutineDeathCount())
+                            + (item.getAbnormalDeathCount() == null ? 0L : item.getAbnormalDeathCount())).sum();
+            BigDecimal avgWeight = latestAvgWeight(growthLogs);
+
+            HarvestRecord harvest = harvestRecordMapper.selectOne(new LambdaQueryWrapper<HarvestRecord>()
+                    .eq(HarvestRecord::getBatchNo, batch.getBatchNo())
+                    .eq(HarvestRecord::getIsDeleted, 0)
+                    .last("LIMIT 1"));
+            long estimatedHarvestQty = estimateHarvestQty(harvest, stockedQty, deathQty);
+
+            BatchSurvivalSnapshot snapshot = new BatchSurvivalSnapshot();
+            snapshot.batchNo = batch.getBatchNo();
+            snapshot.farmId = batch.getFarmId();
+            snapshot.farmName = farmName(batch.getFarmId());
+            snapshot.seedlingId = batch.getSeedlingId();
+            snapshot.seedlingName = seedlingName(batch.getSeedlingId());
+            snapshot.stockedQty = stockedQty;
+            snapshot.estimatedHarvestQty = estimatedHarvestQty;
+            snapshot.deathQty = deathQty;
+            snapshot.totalHarvestWeightKg = harvest == null ? BigDecimal.ZERO : nvl(harvest.getActualTotalWeightKg());
+            snapshot.avgWeightG = avgWeight;
+            snapshot.survivalRate = percent(estimatedHarvestQty, stockedQty);
+            snapshot.analysisDate = harvest != null && harvest.getHarvestDate() != null ? harvest.getHarvestDate() : batch.getPurchaseDate();
+            result.add(snapshot);
+        }
+        return result;
+    }
+
+    private List<ProductionSnapshot> buildProductionSnapshots(LocalDate startDate, LocalDate endDate, Long farmId, Long seedlingId) {
+        LambdaQueryWrapper<HarvestRecord> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(HarvestRecord::getIsDeleted, 0);
+        if (startDate != null) wrapper.ge(HarvestRecord::getHarvestDate, startDate);
+        if (endDate != null) wrapper.le(HarvestRecord::getHarvestDate, endDate);
+        wrapper.orderByDesc(HarvestRecord::getHarvestDate).orderByDesc(HarvestRecord::getId);
+
+        List<ProductionSnapshot> result = new ArrayList<>();
+        for (HarvestRecord harvest : harvestRecordMapper.selectList(wrapper)) {
+            PurchaseBatch batch = purchaseBatchMapper.selectOne(new LambdaQueryWrapper<PurchaseBatch>()
+                    .eq(PurchaseBatch::getBatchNo, harvest.getBatchNo())
+                    .last("LIMIT 1"));
+            Long resolvedFarmId = batch != null ? batch.getFarmId() : farmIdByPond(harvest.getPondId());
+            Long resolvedSeedlingId = batch == null ? null : batch.getSeedlingId();
+            if (farmId != null && !Objects.equals(farmId, resolvedFarmId)) continue;
+            if (seedlingId != null && !Objects.equals(seedlingId, resolvedSeedlingId)) continue;
+
+            ProductionSnapshot snapshot = new ProductionSnapshot();
+            snapshot.farmId = resolvedFarmId;
+            snapshot.farmName = farmName(resolvedFarmId);
+            snapshot.seedlingId = resolvedSeedlingId;
+            snapshot.seedlingName = seedlingName(resolvedSeedlingId);
+            snapshot.totalProductionKg = nvl(harvest.getActualTotalWeightKg());
+            snapshot.totalRevenue = nvl(harvest.getTotalRevenue());
+            snapshot.totalCost = nvl(harvest.getTotalCost());
+            snapshot.netProfit = nvl(harvest.getNetProfit());
+            snapshot.unitPrice = harvest.getUnitPrice();
+            snapshot.harvestDate = harvest.getHarvestDate();
+            result.add(snapshot);
+        }
+        return result;
+    }
+
+    private String farmName(Long farmId) {
+        if (farmId == null) return null;
+        Farm farm = farmMapper.selectById(farmId);
+        return farm == null ? null : farm.getFarmName();
+    }
+
+    private Long farmIdByPond(Long pondId) {
+        if (pondId == null) return null;
+        Pond pond = pondMapper.selectById(pondId);
+        return pond == null ? null : pond.getFarmId();
+    }
+
+    private static long estimateHarvestQty(HarvestRecord harvest, long stockedQty, long deathQty) {
+        if (harvest != null
+                && harvest.getActualTotalWeightKg() != null
+                && harvest.getActualAvgWeightG() != null
+                && harvest.getActualAvgWeightG().compareTo(BigDecimal.ZERO) > 0) {
+            return harvest.getActualTotalWeightKg()
+                    .multiply(BigDecimal.valueOf(1000))
+                    .divide(harvest.getActualAvgWeightG(), 0, RoundingMode.HALF_UP)
+                    .longValue();
+        }
+        return Math.max(0L, stockedQty - deathQty);
+    }
+
+    private static BigDecimal latestAvgWeight(List<BatchGrowthLog> growthLogs) {
+        return growthLogs.stream()
+                .filter(item -> item.getAvgWeight() != null)
+                .max(Comparator.comparing(BatchGrowthLog::getLogDate, Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(BatchGrowthLog::getAvgWeight)
+                .orElse(BigDecimal.ZERO);
+    }
+
+    private static BigDecimal percent(long numerator, long denominator) {
+        if (denominator <= 0) return BigDecimal.ZERO.setScale(1);
+        return BigDecimal.valueOf(numerator)
+                .multiply(BigDecimal.valueOf(100))
+                .divide(BigDecimal.valueOf(denominator), 1, RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal avg(List<BigDecimal> values) {
+        if (values.isEmpty()) return BigDecimal.ZERO.setScale(1);
+        return sum(values).divide(BigDecimal.valueOf(values.size()), 1, RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal sum(List<BigDecimal> values) {
+        return values.stream().filter(Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal nvl(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private static BigDecimal weightedAvgUnitPrice(List<ProductionSnapshot> snapshots) {
+        BigDecimal production = sum(snapshots.stream().map(item -> item.totalProductionKg).toList());
+        BigDecimal revenue = sum(snapshots.stream().map(item -> item.totalRevenue).toList());
+        if (production.compareTo(BigDecimal.ZERO) <= 0) return BigDecimal.ZERO.setScale(2);
+        return revenue.divide(production, 2, RoundingMode.HALF_UP);
+    }
+
+    private static void writeRow(XSSFSheet sheet, int rowIndex, CellStyle style, Object... values) {
+        Row row = sheet.createRow(rowIndex);
+        for (int i = 0; i < values.length; i++) {
+            Cell cell = row.createCell(i);
+            if (style != null) cell.setCellStyle(style);
+            Object value = values[i];
+            if (value instanceof Number number) {
+                cell.setCellValue(number.doubleValue());
+            } else if (value instanceof BigDecimal decimal) {
+                cell.setCellValue(decimal.doubleValue());
+            } else {
+                cell.setCellValue(value == null ? "" : String.valueOf(value));
+            }
+        }
+    }
+
+    private static void autosize(XSSFSheet sheet, int columns) {
+        for (int i = 0; i < columns; i++) {
+            sheet.autoSizeColumn(i);
+            sheet.setColumnWidth(i, Math.min(Math.max(sheet.getColumnWidth(i), 3000), 9000));
+        }
+    }
+
+    private static class BatchSurvivalSnapshot {
+        String batchNo;
+        Long farmId;
+        String farmName;
+        Long seedlingId;
+        String seedlingName;
+        Long stockedQty;
+        Long estimatedHarvestQty;
+        Long deathQty;
+        BigDecimal totalHarvestWeightKg;
+        BigDecimal survivalRate;
+        BigDecimal avgWeightG;
+        LocalDate analysisDate;
+    }
+
+    private static class ProductionSnapshot {
+        Long farmId;
+        String farmName;
+        Long seedlingId;
+        String seedlingName;
+        BigDecimal totalProductionKg;
+        BigDecimal totalRevenue;
+        BigDecimal totalCost;
+        BigDecimal netProfit;
+        BigDecimal unitPrice;
+        LocalDate harvestDate;
+    }
+
+    private static class SurvivalAccumulator {
+        private final String key;
+        private final String label;
+        private Long farmId;
+        private String farmName;
+        private Long seedlingId;
+        private String seedlingName;
+        private long stockedQty;
+        private long estimatedHarvestQty;
+        private long deathQty;
+        private BigDecimal totalHarvestWeightKg = BigDecimal.ZERO;
+        private BigDecimal avgWeightSum = BigDecimal.ZERO;
+        private int avgWeightCount;
+        private int batchCount;
+
+        SurvivalAccumulator(String key, String label) {
+            this.key = key;
+            this.label = label;
+        }
+
+        void add(BatchSurvivalSnapshot snapshot) {
+            if (farmId == null) farmId = snapshot.farmId;
+            if (farmName == null) farmName = snapshot.farmName;
+            if (seedlingId == null) seedlingId = snapshot.seedlingId;
+            if (seedlingName == null) seedlingName = snapshot.seedlingName;
+            stockedQty += snapshot.stockedQty == null ? 0L : snapshot.stockedQty;
+            estimatedHarvestQty += snapshot.estimatedHarvestQty == null ? 0L : snapshot.estimatedHarvestQty;
+            deathQty += snapshot.deathQty == null ? 0L : snapshot.deathQty;
+            totalHarvestWeightKg = totalHarvestWeightKg.add(nvl(snapshot.totalHarvestWeightKg));
+            if (snapshot.avgWeightG != null && snapshot.avgWeightG.compareTo(BigDecimal.ZERO) > 0) {
+                avgWeightSum = avgWeightSum.add(snapshot.avgWeightG);
+                avgWeightCount++;
+            }
+            batchCount++;
+        }
+
+        SurvivalRateVO toVO() {
+            SurvivalRateVO vo = new SurvivalRateVO();
+            vo.setDimKey(key);
+            vo.setDimLabel(label);
+            vo.setFarmId(farmId);
+            vo.setFarmName(farmName);
+            vo.setSeedlingId(seedlingId);
+            vo.setSeedlingName(seedlingName);
+            vo.setStockedQty(stockedQty);
+            vo.setEstimatedHarvestQty(estimatedHarvestQty);
+            vo.setDeathQty(deathQty);
+            vo.setTotalHarvestWeightKg(totalHarvestWeightKg.setScale(2, RoundingMode.HALF_UP));
+            vo.setSurvivalRate(percent(estimatedHarvestQty, stockedQty));
+            vo.setAvgWeightG(avgWeightCount == 0 ? BigDecimal.ZERO.setScale(1) : avgWeightSum.divide(BigDecimal.valueOf(avgWeightCount), 1, RoundingMode.HALF_UP));
+            vo.setBatchCount(batchCount);
+            return vo;
+        }
     }
 
     private static String batchStatusLabel(Byte status) {

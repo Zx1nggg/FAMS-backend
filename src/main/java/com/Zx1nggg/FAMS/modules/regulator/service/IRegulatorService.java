@@ -32,4 +32,14 @@ public interface IRegulatorService {
     List<IotRealtimeAlertVO> getIotRealtimeAlerts();
 
     void handleAlert(Long id, Byte status, String remark);
+
+    List<SurvivalRateVO> getSurvivalRate(LocalDate startDate, LocalDate endDate, Long farmId, Long seedlingId, String groupBy);
+
+    List<SurvivalTrendVO> getSurvivalTrend(LocalDate startDate, LocalDate endDate, Long farmId, Long seedlingId);
+
+    ProductionStatsVO getProductionStats(LocalDate startDate, LocalDate endDate, Long farmId, Long seedlingId);
+
+    List<ProductionRankingVO> getProductionRanking(LocalDate startDate, LocalDate endDate, Long farmId, Long seedlingId, Integer limit);
+
+    byte[] exportAnalysis(String type, LocalDate startDate, LocalDate endDate, Long farmId, Long seedlingId);
 }

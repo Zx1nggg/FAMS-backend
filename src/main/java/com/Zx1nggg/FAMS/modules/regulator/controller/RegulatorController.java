@@ -12,6 +12,10 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -113,5 +117,64 @@ public class RegulatorController {
             @RequestParam(required = false) Byte batchStatus,
             @RequestParam(required = false) String keyword) {
         return Result.success(regulatorService.listTraceBatches(pageNum, pageSize, farmId, batchStatus, keyword));
+    }
+
+    @Operation(summary = "Survival rate analysis")
+    @GetMapping("/analysis/survival-rate")
+    public Result<List<SurvivalRateVO>> getSurvivalRate(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(required = false) Long farmId,
+            @RequestParam(required = false) Long seedlingId,
+            @RequestParam(required = false, defaultValue = "batch") String groupBy) {
+        return Result.success(regulatorService.getSurvivalRate(startDate, endDate, farmId, seedlingId, groupBy));
+    }
+
+    @Operation(summary = "Survival rate trend")
+    @GetMapping("/analysis/survival-trend")
+    public Result<List<SurvivalTrendVO>> getSurvivalTrend(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(required = false) Long farmId,
+            @RequestParam(required = false) Long seedlingId) {
+        return Result.success(regulatorService.getSurvivalTrend(startDate, endDate, farmId, seedlingId));
+    }
+
+    @Operation(summary = "Production statistics")
+    @GetMapping("/analysis/production-stats")
+    public Result<ProductionStatsVO> getProductionStats(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(required = false) Long farmId,
+            @RequestParam(required = false) Long seedlingId) {
+        return Result.success(regulatorService.getProductionStats(startDate, endDate, farmId, seedlingId));
+    }
+
+    @Operation(summary = "Production ranking")
+    @GetMapping("/analysis/production-ranking")
+    public Result<List<ProductionRankingVO>> getProductionRanking(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(required = false) Long farmId,
+            @RequestParam(required = false) Long seedlingId,
+            @RequestParam(required = false, defaultValue = "10") Integer limit) {
+        return Result.success(regulatorService.getProductionRanking(startDate, endDate, farmId, seedlingId, limit));
+    }
+
+    @Log(title = "Regulator analysis export", businessType = 4)
+    @Operation(summary = "Export analysis report")
+    @GetMapping("/analysis/export")
+    public ResponseEntity<byte[]> exportAnalysis(
+            @RequestParam(required = false, defaultValue = "all") String type,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(required = false) Long farmId,
+            @RequestParam(required = false) Long seedlingId) {
+        byte[] bytes = regulatorService.exportAnalysis(type, startDate, endDate, farmId, seedlingId);
+        String filename = "FAMS-analysis-" + LocalDate.now() + ".xlsx";
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(filename).build().toString())
+                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(bytes);
     }
 }
