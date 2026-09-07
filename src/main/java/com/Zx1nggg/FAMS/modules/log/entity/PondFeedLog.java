@@ -36,7 +36,7 @@ public class PondFeedLog implements Serializable {
     /**
      * 关联巡塘记录ID
      */
-    @TableField("patrol_log_id")
+    @TableField(value = "patrol_log_id", updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     @Schema(description = "关联巡塘记录ID")
     private Long patrolLogId;
 
@@ -57,21 +57,21 @@ public class PondFeedLog implements Serializable {
     /**
      * 饲料品牌
      */
-    @TableField("feed_brand")
+    @TableField(value = "feed_brand", updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     @Schema(description = "饲料品牌")
     private String feedBrand;
 
     /**
      * 投饵量(kg)
      */
-    @TableField("feed_amount")
+    @TableField(value = "feed_amount", updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     @Schema(description = "投饵量(kg)")
     private BigDecimal feedAmount;
 
     /**
      * 换水状态 (如: 换水30%)
      */
-    @TableField("water_change_status")
+    @TableField(value = "water_change_status", updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     @Schema(description = "换水状态 (如: 换水30%)")
     private String waterChangeStatus;
 
@@ -80,14 +80,14 @@ public class PondFeedLog implements Serializable {
     /**
      * 饲料单价(元/kg)
      */
-    @TableField("feed_unit_price")
+    @TableField(value = "feed_unit_price", updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     @Schema(description = "饲料单价(元/kg)")
     private BigDecimal feedUnitPrice;
 
     /**
      * 本次投喂金额(元) = feedAmount × feedUnitPrice，自动计算
      */
-    @TableField("feed_total_amount")
+    @TableField(value = "feed_total_amount", updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     @Schema(description = "本次投喂金额(元) = feedAmount × feedUnitPrice")
     private BigDecimal feedTotalAmount;
 
@@ -96,28 +96,28 @@ public class PondFeedLog implements Serializable {
     /**
      * 药品名称
      */
-    @TableField("medicine_name")
+    @TableField(value = "medicine_name", updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     @Schema(description = "药品名称")
     private String medicineName;
 
     /**
      * 用量
      */
-    @TableField("medicine_dosage")
+    @TableField(value = "medicine_dosage", updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     @Schema(description = "用量")
     private BigDecimal medicineDosage;
 
     /**
      * 用量单位 (ml/g/袋)
      */
-    @TableField("medicine_unit")
+    @TableField(value = "medicine_unit", updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     @Schema(description = "用量单位 (ml/g/袋)")
     private String medicineUnit;
 
     /**
      * 本次药费(元)
      */
-    @TableField("medicine_amount")
+    @TableField(value = "medicine_amount", updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     @Schema(description = "本次药费(元)")
     private BigDecimal medicineAmount;
 }

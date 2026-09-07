@@ -19,10 +19,16 @@ public class PurchaseBatchDTO {
     @NotNull(message = "苗种品种不能为空")
     private Long seedlingId;
 
+    @jakarta.validation.constraints.NotBlank
+    @jakarta.validation.constraints.Size(max = 20)
     private String purchaseUnit;
 
+    @NotNull
+    @jakarta.validation.constraints.Positive
     private Integer unitQty;
 
+    @NotNull
+    @jakarta.validation.constraints.Positive
     private Integer densityPerUnit;
 
     private Integer estimatedTotalQty;
@@ -32,7 +38,9 @@ public class PurchaseBatchDTO {
     private String quarantineCertNo;
 
     /** 单价(元/件) */
+    @jakarta.validation.constraints.PositiveOrZero
     private BigDecimal unitPrice;
 
+    @NotNull
     private LocalDate purchaseDate;
 }

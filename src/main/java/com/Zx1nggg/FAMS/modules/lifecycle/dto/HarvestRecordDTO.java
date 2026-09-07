@@ -25,35 +25,47 @@ public class HarvestRecordDTO {
     private LocalDate harvestDate;
 
     @NotNull(message = "实际过磅总重不能为空")
+    @jakarta.validation.constraints.PositiveOrZero
     private BigDecimal actualTotalWeightKg;
 
     /** 最终出池抽测均重(g/尾) */
+    @jakarta.validation.constraints.Positive
     private BigDecimal actualAvgWeightG;
 
     /** 算法预测产量(kg) */
     private BigDecimal predictedWeightKg;
 
     /** 出塘单价(元/kg) */
+    @jakarta.validation.constraints.PositiveOrZero
     private BigDecimal unitPrice;
 
     /** 苗种成本(元) */
+    @jakarta.validation.constraints.PositiveOrZero
     private BigDecimal seedlingCost;
 
     /** 饲料成本(元) */
+    @jakarta.validation.constraints.PositiveOrZero
     private BigDecimal feedCost;
 
     /** 药品成本(元) */
+    @jakarta.validation.constraints.PositiveOrZero
     private BigDecimal medicineCost;
 
     /** 其他成本(元) */
+    @jakarta.validation.constraints.PositiveOrZero
     private BigDecimal otherCost;
 
     /** 收购方/去向 */
+    @jakarta.validation.constraints.NotBlank
+    @jakarta.validation.constraints.Size(max = 100)
     private String buyerName;
 
     /** 备注 */
+    @jakarta.validation.constraints.Size(max = 500)
     private String remark;
 
     /** 结算状态: 0=未结算 1=已结算。新增时前端显式传入1，更新时由 calculateAmounts 自动判断 */
+    @jakarta.validation.constraints.Min(0)
+    @jakarta.validation.constraints.Max(1)
     private Integer settlementStatus;
 }

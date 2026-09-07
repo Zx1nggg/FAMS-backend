@@ -9,6 +9,7 @@ import com.baomidou.mybatisplus.extension.service.IService;
 import java.util.List;
 
 public interface IUserService extends IService<User> {
+    void changePassword(Long userId, com.Zx1nggg.FAMS.modules.system.dto.ChangePasswordDTO dto);
 
     UserProfileVO getProfile(Long userId);
 

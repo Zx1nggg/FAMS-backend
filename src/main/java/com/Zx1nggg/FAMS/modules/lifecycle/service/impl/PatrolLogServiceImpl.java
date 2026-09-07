@@ -37,6 +37,13 @@ public class PatrolLogServiceImpl extends ServiceImpl<PatrolLogMapper, PatrolLog
     @Resource
     private PurchaseBatchMapper purchaseBatchMapper;
 
+    @Resource
+    private com.Zx1nggg.FAMS.modules.lifecycle.service.LifecycleAccessService lifecycleAccess;
+    @Resource
+    private com.Zx1nggg.FAMS.modules.lifecycle.mapper.BatchGrowthLogMapper growthMapper;
+    @Resource
+    private com.Zx1nggg.FAMS.modules.log.mapper.PondFeedLogMapper feedMapper;
+
     @Override
     public Page<PatrolLogVO> pageQuery(Integer pageNum, Integer pageSize,
                                        Long pondId, Long farmId,
@@ -81,7 +88,9 @@ public class PatrolLogServiceImpl extends ServiceImpl<PatrolLogMapper, PatrolLog
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public PatrolLogVO create(PatrolLogDTO dto) {
+        validateAssociation(dto);
         Pond pond = pondMapper.selectById(dto.getPondId());
         if (pond == null) throw new BusinessException(404, "池塘不存在");
 
@@ -96,11 +105,18 @@ public class PatrolLogServiceImpl extends ServiceImpl<PatrolLogMapper, PatrolLog
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public PatrolLogVO update(Long id, PatrolLogDTO dto) {
         PatrolLog log = getById(id);
         if (log == null) return null;
         checkFarmAccess(log);
+        lifecycleAccess.requirePatrol(id, log.getPondId(), log.getBatchNo());
+        if (!java.util.Objects.equals(log.getPondId(), dto.getPondId())
+                || !java.util.Objects.equals(log.getBatchNo(), dto.getBatchNo())) {
+            assertNoChildren(id);
+        }
         assertBatchNotHarvested(log.getBatchNo());
+        validateAssociation(dto);
 
         Pond pond = pondMapper.selectById(dto.getPondId());
         if (pond == null) throw new BusinessException(404, "池塘不存在");
@@ -112,6 +128,7 @@ public class PatrolLogServiceImpl extends ServiceImpl<PatrolLogMapper, PatrolLog
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public void batchDelete(List<Long> ids) {
         List<PatrolLog> logs = listByIds(ids);
         if (SecurityUtils.isFarmer()) {
@@ -120,12 +137,21 @@ public class PatrolLogServiceImpl extends ServiceImpl<PatrolLogMapper, PatrolLog
             }
         }
         for (PatrolLog log : logs) {
-            assertBatchNotHarvested(log.getBatchNo());
+            lifecycleAccess.requirePatrol(log.getId(), log.getPondId(), log.getBatchNo());
+            assertNoChildren(log.getId());
         }
         removeByIds(ids);
     }
 
     // ==================== private helpers ====================
+    private void assertNoChildren(Long id) {
+        if (growthMapper.selectCount(new LambdaQueryWrapper<com.Zx1nggg.FAMS.modules.lifecycle.entity.BatchGrowthLog>()
+                .eq(com.Zx1nggg.FAMS.modules.lifecycle.entity.BatchGrowthLog::getPatrolLogId, id)) > 0
+                || feedMapper.selectCount(new LambdaQueryWrapper<com.Zx1nggg.FAMS.modules.log.entity.PondFeedLog>()
+                .eq(com.Zx1nggg.FAMS.modules.log.entity.PondFeedLog::getPatrolLogId, id)) > 0) {
+            throw new BusinessException(400, "巡塘记录存在生长或投喂明细，请先处理关联记录");
+        }
+    }
 
     private PatrolLogVO toVO(PatrolLog log) {
         PatrolLogVO vo = new PatrolLogVO();
@@ -152,9 +178,13 @@ public class PatrolLogServiceImpl extends ServiceImpl<PatrolLogMapper, PatrolLog
     }
 
     private void checkFarmAccess(PatrolLog log) {
-        if (SecurityUtils.isFarmer() && log.getPondId() != null) {
-            Pond pond = pondMapper.selectById(log.getPondId());
-            if (pond != null) checkFarmAccessByPond(pond);
+        lifecycleAccess.requirePond(log.getPondId());
+    }
+
+    private void validateAssociation(PatrolLogDTO dto) {
+        lifecycleAccess.requirePond(dto.getPondId());
+        if (dto.getBatchNo() != null && !dto.getBatchNo().isBlank()) {
+            lifecycleAccess.requireBatchForPond(dto.getBatchNo(), dto.getPondId(), true);
         }
     }
 

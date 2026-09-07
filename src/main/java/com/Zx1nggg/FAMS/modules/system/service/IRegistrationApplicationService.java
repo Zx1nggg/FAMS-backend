@@ -47,7 +47,7 @@ public interface IRegistrationApplicationService extends IService<RegistrationAp
     Long approveApplication(Long id, Long reviewerId, ApprovalReqDTO dto);
 
     /**
-     * 查询申请状态（按手机号查询）
+     * 验证手机号与申请密码后查询最新申请状态
      */
-    RegistrationApplicationVO queryStatusByPhone(String phone);
+    RegistrationApplicationVO queryStatusByPhone(String phone, String password);
 }

@@ -9,10 +9,12 @@ import lombok.Data;
 @Data
 public class LoginReqDTO {
 
-    @NotBlank(message = "账号不能为空")
-    private String username;
+    @NotBlank(message = "手机号不能为空")
+    private String phone;
 
     @NotBlank(message = "密码不能为空")
+    @jakarta.validation.constraints.Size(max = 72)
+    @lombok.ToString.Exclude
     private String password;
 
     // 如果前端传了记住我，也可以在这里接收

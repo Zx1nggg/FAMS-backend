@@ -33,24 +33,26 @@ public class RegistrationApplication implements Serializable {
     private Long id;
 
     /**
-     * 申请登录账号
+     * 前端展示昵称（登录凭证为手机号）
      */
     @TableField("username")
-    @Schema(description = "申请登录账号")
+    @Schema(description = "前端展示昵称")
     private String username;
 
     /**
      * 密码(BCrypt加密)
      */
     @TableField("password")
+    @ToString.Exclude
+    @com.fasterxml.jackson.annotation.JsonIgnore
     @Schema(description = "密码(BCrypt加密)")
     private String password;
 
     /**
-     * 真实姓名/负责人
+     * 历史申请实名；新申请登录后在个人资料中补充
      */
     @TableField("real_name")
-    @Schema(description = "真实姓名/负责人")
+    @Schema(description = "历史申请实名")
     private String realName;
 
     /**

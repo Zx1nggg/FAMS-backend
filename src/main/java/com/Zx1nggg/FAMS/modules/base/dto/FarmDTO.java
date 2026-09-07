@@ -12,8 +12,12 @@ public class FarmDTO {
 
     private Long userId;
 
+    @jakarta.validation.constraints.DecimalMin("-180")
+    @jakarta.validation.constraints.DecimalMax("180")
     private BigDecimal longitude;
 
+    @jakarta.validation.constraints.DecimalMin("-90")
+    @jakarta.validation.constraints.DecimalMax("90")
     private BigDecimal latitude;
 
     private String address;

@@ -16,6 +16,7 @@ public class StockingDTO {
     private Long pondId;
 
     @NotNull(message = "投放件数不能为空")
+    @jakarta.validation.constraints.Positive
     private Integer stockedUnits;
 
     private BigDecimal stockedWeight;

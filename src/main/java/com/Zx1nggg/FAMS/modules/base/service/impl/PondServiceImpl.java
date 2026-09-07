@@ -28,6 +28,7 @@ public class PondServiceImpl extends ServiceImpl<PondMapper, Pond> implements IP
 
     @Autowired
     private RedisTemplate<String, String> redisTemplate;
+    @Autowired private com.Zx1nggg.FAMS.modules.base.mapper.FarmMapper farmMapper;
 
     @Override
     public Page<PondVO> pageQuery(Integer pageNum, Integer pageSize, Long farmId, String pondName) {
@@ -71,6 +72,11 @@ public class PondServiceImpl extends ServiceImpl<PondMapper, Pond> implements IP
             return null;
         }
         checkFarmAccess(pond);
+        Long targetFarm = resolveFarmId(dto.getFarmId());
+        if (!Objects.equals(pond.getFarmId(), targetFarm)
+                && baseMapper.countHistory(id) > 0) {
+            throw new BusinessException(400, "已有业务历史的池塘不能变更养殖场");
+        }
         BeanUtils.copyProperties(dto, pond);
         pond.setId(id);
         pond.setFarmId(resolveFarmId(dto.getFarmId()));
@@ -79,7 +85,9 @@ public class PondServiceImpl extends ServiceImpl<PondMapper, Pond> implements IP
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public void batchDelete(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) throw new BusinessException(400, "请选择池塘");
         if (SecurityUtils.isFarmer()) {
             List<Pond> ponds = listByIds(ids);
             Long userFarmId = SecurityUtils.getCurrentFarmId();
@@ -95,22 +103,22 @@ public class PondServiceImpl extends ServiceImpl<PondMapper, Pond> implements IP
     }
 
     @Override
-    public void batchDeleteByFarmIds(List<Long> farmIds) {
+    public void batchDeleteByFarmIds(List<Long> farmIds, String deleteBatch) {
         LambdaQueryWrapper<Pond> wrapper = new LambdaQueryWrapper<>();
         wrapper.in(Pond::getFarmId, farmIds);
         List<Pond> ponds = list(wrapper);
         if (!ponds.isEmpty()) {
             List<Long> pondIds = ponds.stream().map(Pond::getId).toList();
+            baseMapper.update(null, new LambdaUpdateWrapper<Pond>().in(Pond::getId, pondIds).set(Pond::getDeleteBatch, deleteBatch));
             removeByIds(pondIds);
             cleanupIotCache(ponds);
         }
     }
 
     @Override
-    public void restoreByFarmIds(List<Long> farmIds) {
-        LambdaUpdateWrapper<Pond> uw = new LambdaUpdateWrapper<>();
-        uw.in(Pond::getFarmId, farmIds).set(Pond::getIsDeleted, 0);
-        baseMapper.update(null, uw);
+    public void restoreByFarmIds(List<Long> farmIds, String deleteBatch) {
+        if (deleteBatch == null) return;
+        for (Long farmId : farmIds) baseMapper.restoreCascadeDeleted(farmId, deleteBatch);
     }
 
     private PondVO toVO(Pond pond) {
@@ -133,6 +141,9 @@ public class PondServiceImpl extends ServiceImpl<PondMapper, Pond> implements IP
                 throw new BusinessException(401, "当前用户养殖场信息缺失，请重新登录");
             }
             return farmId;
+        }
+        if (dtoFarmId == null || farmMapper.selectById(dtoFarmId) == null) {
+            throw new BusinessException(404, "养殖场不存在或已删除");
         }
         return dtoFarmId;
     }

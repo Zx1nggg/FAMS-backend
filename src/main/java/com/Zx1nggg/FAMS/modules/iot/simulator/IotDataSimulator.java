@@ -57,6 +57,7 @@ public class IotDataSimulator {
 
     @Autowired
     private RedisTemplate<String, String> redisTemplate;
+    @Autowired private org.springframework.transaction.support.TransactionTemplate transactionTemplate;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Random random = new Random();
@@ -89,7 +90,7 @@ public class IotDataSimulator {
                 checkAlarms(pond, data, iotRules);
                 count++;
             } catch (Exception e) {
-                log.error("[IoT-Sim] 池塘 {} 模拟失败: {}", pond.getId(), e.getMessage());
+                log.error("[IoT-Sim] 池塘 {} 模拟失败，异常类型: {}", pond.getId(), e.getClass().getSimpleName());
             }
         }
 
@@ -232,30 +233,37 @@ public class IotDataSimulator {
             alarm.setOccurrenceCount(1);
             alarm.setFirstOccurredAt(now);
             alarm.setLastOccurredAt(now);
-            alarmRecordMapper.insert(alarm);
-            log.warn("[IoT-Alarm] 新告警 | {} | {} | {}", rule.getAlarmCode(), pond.getPondName(), message);
-            return;
+            try {
+                alarmRecordMapper.insert(alarm);
+                log.warn("[IoT-Alarm] 新告警 | {} | {} | {}", rule.getAlarmCode(), pond.getPondName(), message);
+                return;
+            } catch (org.springframework.dao.DuplicateKeyException e) {
+                // 另一个采集进程刚创建相同活动告警，转为原子累加。
+            }
         }
 
-        alarm.setTriggerValue(value);
-        alarm.setMessage(message);
-        alarm.setSeverity(rule.getSeverity());
-        alarm.setLastOccurredAt(now);
-        alarm.setOccurrenceCount((alarm.getOccurrenceCount() == null ? 0 : alarm.getOccurrenceCount()) + 1);
-        alarmRecordMapper.updateById(alarm);
+        alarmRecordMapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<AlarmRecord>()
+                .eq(AlarmRecord::getDedupKey, dedupKey).in(AlarmRecord::getStatus, 0, 1, 2)
+                .set(AlarmRecord::getTriggerValue, value).set(AlarmRecord::getMessage, message)
+                .set(AlarmRecord::getSeverity, rule.getSeverity()).set(AlarmRecord::getLastOccurredAt, now)
+                .setSql("occurrence_count = COALESCE(occurrence_count, 0) + 1"));
     }
 
     private void recoverAlarm(Pond pond, AlarmRule rule) {
+        transactionTemplate.executeWithoutResult(status -> recoverAlarmInTransaction(pond, rule));
+    }
+
+    private void recoverAlarmInTransaction(Pond pond, AlarmRule rule) {
         AlarmRecord alarm = findActiveAlarm(buildDedupKey(pond, rule));
         if (alarm == null) return;
 
         LocalDateTime now = LocalDateTime.now();
         byte previous = alarm.getStatus();
-        alarm.setStatus(ALARM_RESOLVED);
-        alarm.setRecoveredAt(now);
-        alarm.setResolvedAt(now);
-        alarm.setResolutionRemark("监测指标已自动恢复正常");
-        alarmRecordMapper.updateById(alarm);
+        int changed = alarmRecordMapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<AlarmRecord>()
+                .eq(AlarmRecord::getId, alarm.getId()).eq(AlarmRecord::getStatus, previous)
+                .set(AlarmRecord::getStatus, ALARM_RESOLVED).set(AlarmRecord::getRecoveredAt, now)
+                .set(AlarmRecord::getResolvedAt, now).set(AlarmRecord::getResolutionRemark, "监测指标已自动恢复正常"));
+        if (changed != 1) return;
 
         AlarmActionLog action = new AlarmActionLog();
         action.setAlarmId(alarm.getId());

@@ -76,7 +76,7 @@ public class HarvestRecordController {
 
     @Operation(summary = "结算预览：获取批次的养殖汇总数据")
     @GetMapping("/preview")
-    public Result<Map<String, Object>> preview(@RequestParam Long batchId) {
-        return Result.success(harvestRecordService.preview(batchId));
+    public Result<Map<String, Object>> preview(@RequestParam Long batchId, @RequestParam Long pondId) {
+        return Result.success(harvestRecordService.preview(batchId, pondId));
     }
 }

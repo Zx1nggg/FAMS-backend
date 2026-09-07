@@ -77,14 +77,9 @@ public class UserFarmCacheService {
         if (userId == null || farmId == null) {
             return false;
         }
-        String key = CACHE_PREFIX + userId;
-        Boolean isMember = stringRedisTemplate.opsForSet().isMember(key, farmId.toString());
-        if (Boolean.TRUE.equals(isMember)) {
-            return true;
-        }
-        // 缓存可能过期或不存在，回源 DB 重试一次
-        cacheUserFarms(userId);
-        return Boolean.TRUE.equals(stringRedisTemplate.opsForSet().isMember(key, farmId.toString()));
+        // 授权以当前数据库为准，缓存不能使转让或删除后的权限继续有效。
+        Farm farm = farmMapper.selectById(farmId);
+        return farm != null && java.util.Objects.equals(farm.getUserId(), userId);
     }
 
     /**

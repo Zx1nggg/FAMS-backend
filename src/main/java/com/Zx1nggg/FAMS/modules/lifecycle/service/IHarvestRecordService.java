@@ -47,5 +47,5 @@ public interface IHarvestRecordService extends IService<HarvestRecord> {
     /**
      * 结算预览：拉取该批次的养殖汇总数据
      */
-    Map<String, Object> preview(Long batchId);
+    Map<String, Object> preview(Long batchId, Long pondId);
 }

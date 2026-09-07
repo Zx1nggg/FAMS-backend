@@ -57,4 +57,5 @@ public class Pond implements Serializable {
     @TableField("is_deleted")
     @TableLogic
     private Integer isDeleted;
+    private String deleteBatch;
 }

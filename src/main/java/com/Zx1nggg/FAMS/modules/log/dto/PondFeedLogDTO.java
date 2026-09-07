@@ -20,22 +20,26 @@ public class PondFeedLogDTO {
 
     private String feedBrand;
 
+    @jakarta.validation.constraints.PositiveOrZero
     private BigDecimal feedAmount;
 
     private String waterChangeStatus;
 
     // ==================== 饲料成本 ====================
 
+    @jakarta.validation.constraints.PositiveOrZero
     private BigDecimal feedUnitPrice;
 
     // ==================== 药品记录 ====================
 
     private String medicineName;
 
+    @jakarta.validation.constraints.PositiveOrZero
     private BigDecimal medicineDosage;
 
     private String medicineUnit;
 
+    @jakarta.validation.constraints.PositiveOrZero
     private BigDecimal medicineAmount;
 
     /**

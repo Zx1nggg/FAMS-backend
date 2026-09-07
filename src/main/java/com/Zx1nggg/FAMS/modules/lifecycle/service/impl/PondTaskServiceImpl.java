@@ -31,6 +31,7 @@ public class PondTaskServiceImpl extends ServiceImpl<PondTaskMapper, PondTask> i
 
     @Resource
     private SopTemplateMapper sopTemplateMapper;
+    @Resource private com.Zx1nggg.FAMS.modules.lifecycle.service.LifecycleAccessService lifecycleAccess;
 
     @Override
     public Page<PondTaskVO> pageQuery(Integer pageNum, Integer pageSize,
@@ -80,22 +81,31 @@ public class PondTaskServiceImpl extends ServiceImpl<PondTaskMapper, PondTask> i
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public void checkOff(Long id) {
         PondTask task = getById(id);
         if (task == null) throw new BusinessException(404, "任务不存在");
         // 🌟 数据隔离
         checkFarmAccessByPondId(task.getPondId());
+        if (task.getBatchNo() != null && !task.getBatchNo().isBlank()) {
+            lifecycleAccess.requireBatchForPond(task.getBatchNo(), task.getPondId(), true);
+        }
         if (task.getStatus() != null && task.getStatus() == 1) {
             throw new BusinessException(400, "任务已完成，无需重复打卡");
         }
         task.setStatus((byte) 1);
         task.setFinishTime(LocalDateTime.now());
         task.setOperatorId(SecurityUtils.getCurrentUserId());
-        updateById(task);
+        if (baseMapper.update(task, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<PondTask>()
+                .eq(PondTask::getId, id).in(PondTask::getStatus, 0, 2)) != 1) {
+            throw new BusinessException(409, "任务状态已变化，请刷新后重试");
+        }
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public void batchCheckOff(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) throw new BusinessException(400, "请选择任务");
         for (Long id : ids) {
             checkOff(id);
         }
@@ -141,7 +151,7 @@ public class PondTaskServiceImpl extends ServiceImpl<PondTaskMapper, PondTask> i
      * 🌟 数据隔离：校验 FARMER 是否有权操作该池塘所属农场
      */
     private void checkFarmAccessByPondId(Long pondId) {
-        if (pondId == null) return;
+        if (pondId == null) throw new BusinessException(403, "任务缺少池塘归属");
         if (SecurityUtils.isFarmer()) {
             Pond pond = pondMapper.selectById(pondId);
             if (pond == null || !Objects.equals(pond.getFarmId(), SecurityUtils.getCurrentFarmId())) {

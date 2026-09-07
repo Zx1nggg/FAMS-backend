@@ -38,6 +38,7 @@ public class HourlyAggregator {
 
     @Autowired
     private RedisTemplate<String, String> redisTemplate;
+    @Autowired private org.springframework.transaction.support.TransactionTemplate transactionTemplate;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -64,11 +65,18 @@ public class HourlyAggregator {
             try {
                 IotSensorData avg = aggregatePond(pond, fromMs, toMs, hourStart);
                 if (avg != null) {
-                    iotSensorDataMapper.insert(avg);
-                    count++;
+                    Boolean inserted = transactionTemplate.execute(status -> {
+                        if (pondMapper.selectForUpdate(pond.getId()) == null) return false;
+                        var query = new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<IotSensorData>()
+                                .eq(IotSensorData::getPondId, pond.getId()).eq(IotSensorData::getDeviceSn, avg.getDeviceSn())
+                                .eq(IotSensorData::getCollectTime, avg.getCollectTime());
+                        if (iotSensorDataMapper.selectCount(query) > 0) return false;
+                        iotSensorDataMapper.insert(avg); return true;
+                    });
+                    if (Boolean.TRUE.equals(inserted)) count++;
                 }
             } catch (Exception e) {
-                log.error("[HourlyAgg] 池塘 {} 聚合失败: {}", pond.getId(), e.getMessage());
+                log.error("[HourlyAgg] 池塘 {} 聚合失败，异常类型: {}", pond.getId(), e.getClass().getSimpleName());
             }
         }
 
@@ -81,7 +89,7 @@ public class HourlyAggregator {
     private IotSensorData aggregatePond(Pond pond, long fromMs, long toMs,
                                         LocalDateTime collectTime) {
         String key = REDIS_HISTORY_PREFIX + pond.getId();
-        Set<String> members = redisTemplate.opsForZSet().rangeByScore(key, fromMs, toMs);
+        Set<String> members = redisTemplate.opsForZSet().rangeByScore(key, fromMs, toMs - 1);
 
         if (members == null || members.isEmpty()) return null;
 
@@ -92,9 +100,13 @@ public class HourlyAggregator {
             try {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> map = objectMapper.readValue(json, Map.class);
-                sumTemp += Double.parseDouble(String.valueOf(map.get("waterTemp")));
-                sumDo += Double.parseDouble(String.valueOf(map.get("dissolvedOxygen")));
-                sumPh += Double.parseDouble(String.valueOf(map.get("phValue")));
+                double temperature = Double.parseDouble(String.valueOf(map.get("waterTemp")));
+                double oxygen = Double.parseDouble(String.valueOf(map.get("dissolvedOxygen")));
+                double ph = Double.parseDouble(String.valueOf(map.get("phValue")));
+                if (!Double.isFinite(temperature) || !Double.isFinite(oxygen) || !Double.isFinite(ph)) continue;
+                sumTemp += temperature;
+                sumDo += oxygen;
+                sumPh += ph;
                 n++;
             } catch (Exception ignored) {
                 // 跳过格式异常的数据

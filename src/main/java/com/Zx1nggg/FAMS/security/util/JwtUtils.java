@@ -43,12 +43,17 @@ public class JwtUtils {
      * 生成 JWT Token（含 JTI，支持黑名单撤销）
      */
     public String generateToken(Long userId, String phone, String userType, Long farmId) {
+        return generateToken(userId, phone, userType, farmId, 0L);
+    }
+
+    public String generateToken(Long userId, String phone, String userType, Long farmId, Long authVersion) {
         return Jwts.builder()
                 .id(UUID.randomUUID().toString()) // 生成唯一 JWT ID，用于 Token 黑名单撤销
                 .claim("userId", userId)
                 .claim("phone", phone)
                 .claim("userType", userType)
                 .claim("farmId", farmId) // 塞入农场ID
+                .claim("authVersion", authVersion == null ? 0L : authVersion)
                 .subject(phone)
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + expiration))
@@ -99,6 +104,7 @@ public class JwtUtils {
      */
     public boolean validateToken(String token) {
         Claims claims = getClaimsFromToken(token);
-        return claims != null && !claims.getExpiration().before(new Date());
+        return claims != null && claims.getExpiration() != null
+                && claims.getExpiration().after(new Date());
     }
 }

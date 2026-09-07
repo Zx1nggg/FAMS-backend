@@ -42,6 +42,8 @@ public class User implements Serializable {
      * 密码(BCrypt加密)
      */
     @TableField("password")
+    @ToString.Exclude
+    @com.fasterxml.jackson.annotation.JsonIgnore
     @Schema(description = "密码(BCrypt加密)")
     private String password;
 
@@ -79,6 +81,9 @@ public class User implements Serializable {
     @TableField("status")
     @Schema(description = "帐号状态: 1正常, 0停用")
     private Byte status;
+
+    /** 密码或账号安全状态变化时递增，使旧 JWT 永久失效。 */
+    private Long authVersion;
 
     /**
      * 头像路径（相对路径，如 uploads/avatar/1_xxx.jpg）

@@ -1,197 +1,194 @@
 package com.Zx1nggg.FAMS.security;
 
+import com.Zx1nggg.FAMS.modules.system.entity.User;
+import com.Zx1nggg.FAMS.modules.system.mapper.UserMapper;
+import com.Zx1nggg.FAMS.modules.system.service.IUserService;
+import com.Zx1nggg.FAMS.modules.system.vo.UserProfileVO;
+import com.Zx1nggg.FAMS.modules.base.entity.Farm;
+import com.Zx1nggg.FAMS.modules.base.mapper.FarmMapper;
+import com.Zx1nggg.FAMS.modules.regulator.service.IRegulatorService;
+import com.Zx1nggg.FAMS.security.service.TokenBlacklistService;
 import com.Zx1nggg.FAMS.security.util.JwtUtils;
-import org.junit.jupiter.api.*;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
+import jakarta.servlet.http.Cookie;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.MediaType;
-import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
-
-import jakarta.servlet.http.Cookie;
-
-import static org.assertj.core.api.Assertions.*;
+import java.util.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-/**
- * 🔐 JWT 安全体系闭环验证测试
- * <p>
- * 覆盖以下 7 条安全边界：
- * 1. CORS 预检放行
- * 2. 登录 → 获取 Token（Header + Cookie 双通道）
- * 3. Token 访问受保护资源
- * 4. 无 Token / 非法 Token → 401
- * 5. Cookie 认证通道独立有效
- * 6. 退出登录 → Token 立即失效（黑名单生效）
- * 7. 退出后再次访问 → 401
- */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@AutoConfigureMockMvc
-@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+/** Real JWT and Spring Security chain, isolated persistence/cache boundaries. */
+@SpringBootTest(properties = {"app.scheduling.enabled=false", "mybatis-plus.configuration.log-impl=org.apache.ibatis.logging.nologging.NoLoggingImpl"})
+@AutoConfigureMockMvc(print = org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint.NONE)
 class JwtSecurityVerificationTest {
-
-    @Autowired
-    private MockMvc mockMvc;
-
-    @Autowired
-    private JwtUtils jwtUtils;
-
-    private static String accessToken;
-    private static Cookie tokenCookie;
-
-    // ==================== 1️⃣ CORS 预检 ====================
-
-    @Test
-    @Order(1)
-    @DisplayName("1. CORS OPTIONS 预检请求应放行并返回跨域响应头")
-    void corsPreflight_shouldPass() throws Exception {
-        MvcResult result = mockMvc.perform(options("/auth/login")
-                        .header("Origin", "http://localhost:5173")
-                        .header("Access-Control-Request-Method", "POST"))
-                .andExpect(status().isOk())
-                .andExpect(header().exists("Access-Control-Allow-Origin"))
-                .andExpect(header().exists("Access-Control-Allow-Methods"))
-                .andReturn();
-
-        System.out.println("✅ CORS 预检通过，响应头: " +
-                result.getResponse().getHeader("Access-Control-Allow-Origin"));
+    private static final String KEY = UUID.randomUUID().toString() + UUID.randomUUID();
+    @DynamicPropertySource
+    static void properties(DynamicPropertyRegistry registry) {
+        registry.add("jwt.secret", () -> KEY);
     }
+    @Autowired MockMvc mvc;
+    @Autowired JwtUtils jwt;
+    @Autowired org.springframework.security.crypto.password.PasswordEncoder encoder;
+    @MockitoBean org.springframework.data.redis.core.StringRedisTemplate farmCache;
+    @MockitoBean UserMapper users;
+    @MockitoBean FarmMapper farms;
+    @MockitoBean IUserService userService;
+    @MockitoBean IRegulatorService regulatorService;
+    @MockitoBean TokenBlacklistService blacklist;
+    @MockitoBean com.Zx1nggg.FAMS.modules.system.service.IRegistrationApplicationService registrations;
+    private User user;
+    private final Set<String> revoked = new HashSet<>();
 
-    // ==================== 2️⃣ 正常登录 ====================
-
-    @Test
-    @Order(2)
-    @DisplayName("2. 登录 → 同时获取 Header Token 和 Cookie Token")
-    void login_shouldReturnTokenInBothChannels() throws Exception {
-        String loginJson = """
-                {
-                    "phone": "13800000001",
-                    "password": "123456"
-                }
-                """;
-
-        MvcResult result = mockMvc.perform(post("/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(loginJson))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(200))
-                .andExpect(cookie().exists("aqua_token"))
-                .andReturn();
-
-        // 从 Cookie 中提取 Token
-        MockHttpServletResponse response = result.getResponse();
-        Cookie cookie = response.getCookie("aqua_token");
-        assertThat(cookie).isNotNull();
-        assertThat(cookie.isHttpOnly()).isTrue();
-        accessToken = cookie.getValue();
-        tokenCookie = cookie;
-
-        // 验证 Token 结构：可解析、含 JTI
-        assertThat(jwtUtils.validateToken(accessToken)).isTrue();
-        assertThat(jwtUtils.getJtiFromToken(accessToken)).isNotBlank();
-
-        System.out.println("✅ 登录成功，Token 已写入 HttpOnly Cookie");
-        System.out.println("   Token JTI: " + jwtUtils.getJtiFromToken(accessToken));
+    @BeforeEach void setUp() {
+        user = new User();
+        user.setId(1L); user.setPhone("test-subject"); user.setUserType("FARMER");
+        user.setStatus((byte) 1); user.setFarmId(10L);
+        when(users.selectById(1L)).thenReturn(user);
+        Farm farm = new Farm(); farm.setId(10L); farm.setUserId(1L);
+        when(farms.selectById(10L)).thenReturn(farm);
+        UserProfileVO profile = new UserProfileVO(); profile.setId(1L);
+        when(userService.getProfile(1L)).thenReturn(profile);
+        revoked.clear();
+        when(blacklist.isBlacklisted(anyString())).thenAnswer(i -> revoked.contains(i.getArgument(0)));
+        doAnswer(i -> { revoked.add(i.getArgument(0)); return null; }).when(blacklist).blacklist(anyString(), anyLong());
     }
-
-    // ==================== 3️⃣ Cookie 通道访问受保护资源 ====================
-
-    @Test
-    @Order(3)
-    @DisplayName("3. Cookie Token → 访问受保护资源（RoleController）")
-    void cookieAuth_shouldAccessProtectedEndpoint() throws Exception {
-        mockMvc.perform(get("/role/list")
-                        .cookie(tokenCookie))
-                .andExpect(status().isOk());
-
-        System.out.println("✅ Cookie 认证通道有效，受保护资源可访问");
+    private String token() { return jwt.generateToken(1L, "test-subject", "FARMER", 10L); }
+    private void expectProfile(String token, int code) throws Exception {
+        mvc.perform(get("/user/profile").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(code));
     }
-
-    // ==================== 4️⃣ Header 通道访问受保护资源 ====================
-
-    @Test
-    @Order(4)
-    @DisplayName("4. Authorization Header → 访问受保护资源")
-    void headerAuth_shouldAccessProtectedEndpoint() throws Exception {
-        mockMvc.perform(get("/user/list")
-                        .header("Authorization", "Bearer " + accessToken))
-                .andExpect(status().isOk());
-
-        System.out.println("✅ Header 认证通道有效");
+    @Test void unauthenticatedReturnsJson401() throws Exception {
+        mvc.perform(get("/user/profile")).andExpect(status().isOk()).andExpect(jsonPath("$.code").value(401));
     }
-
-    // ==================== 5️⃣ 无 Token → 401 ====================
-
-    @Test
-    @Order(5)
-    @DisplayName("5. 无 Token 请求 → 应返回 401")
-    void noToken_shouldReturn401() throws Exception {
-        mockMvc.perform(get("/user/list"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(401));
-
-        System.out.println("✅ 无 Token 请求被正确拦截，返回 401");
+    @Test void malformedTokenIsRejected() throws Exception { expectProfile("invalid", 401); }
+    @Test void legacyPhoneOnlyStatusQueryCannotReturnPersonalData() throws Exception {
+        mvc.perform(get("/auth/registration-status").param("phone", "13900007777"))
+                .andExpect(jsonPath("$.code").value(405)).andExpect(jsonPath("$.data.realName").doesNotExist());
+        verifyNoInteractions(registrations);
     }
-
-    // ==================== 6️⃣ 非法 Token → 401 ====================
-
-    @Test
-    @Order(6)
-    @DisplayName("6. 伪造 Token → 应返回 401")
-    void forgedToken_shouldReturn401() throws Exception {
-        String fakeToken = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJoYWNrZXIifQ.fake";
-
-        mockMvc.perform(get("/user/list")
-                        .header("Authorization", "Bearer " + fakeToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(401));
-
-        System.out.println("✅ 伪造 Token 被正确拦截");
+    @Test void statusQueryRequiresPasswordInBody() throws Exception {
+        mvc.perform(post("/auth/registration-status").contentType("application/json").content("{\"phone\":\"13900007777\"}"))
+                .andExpect(jsonPath("$.code").value(400));
+        verifyNoInteractions(registrations);
     }
-
-    // ==================== 7️⃣ 退出登录 + 黑名单验证 ====================
-
-    @Test
-    @Order(7)
-    @DisplayName("7. 退出登录 → Token 立即失效 → 再次请求 401")
-    void logout_shouldRevokeToken() throws Exception {
-        // 7.1 退出登录（同时加入黑名单 + 删除 Cookie）
-        mockMvc.perform(post("/auth/logout")
-                        .cookie(tokenCookie)
-                        .header("Authorization", "Bearer " + accessToken))
-                .andExpect(status().isOk())
+    @Test void verifiedStatusRequestWorksWithoutLoginEvenWithStaleCookie() throws Exception {
+        String password = UUID.randomUUID().toString();
+        var result = new com.Zx1nggg.FAMS.modules.system.vo.RegistrationApplicationVO(); result.setStatus(0);
+        when(registrations.queryStatusByPhone("13900007777", password)).thenReturn(result);
+        String body = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(Map.of("phone", "13900007777", "password", password));
+        mvc.perform(post("/auth/registration-status").cookie(new Cookie("aqua_token", "invalid"))
+                .contentType("application/json").content(body)).andExpect(jsonPath("$.code").value(200));
+        verify(registrations).queryStatusByPhone("13900007777", password);
+    }
+    @Test void wrongSignatureIsRejected() throws Exception {
+        String value = Jwts.builder().subject("test-subject").expiration(new Date(System.currentTimeMillis()+60000))
+                .signWith(Jwts.SIG.HS256.key().build()).compact();
+        expectProfile(value, 401);
+    }
+    @Test void expiredTokenIsRejected() throws Exception {
+        String value = Jwts.builder().subject("test-subject").expiration(new Date(1))
+                .signWith(Keys.hmacShaKeyFor(KEY.getBytes(java.nio.charset.StandardCharsets.UTF_8))).compact();
+        expectProfile(value, 401);
+    }
+    @Test void missingExpirationIsRejected() throws Exception {
+        String value = Jwts.builder().subject("test-subject").id("test-id").claim("userId", 1L).claim("userType", "FARMER")
+                .signWith(Keys.hmacShaKeyFor(KEY.getBytes(java.nio.charset.StandardCharsets.UTF_8))).compact();
+        expectProfile(value, 401);
+    }
+    @Test void malformedIdentityClaimIsRejected() throws Exception {
+        String value = Jwts.builder().subject("test-subject").id("test-id").claim("userId", "invalid").claim("userType", "FARMER")
+                .expiration(new Date(System.currentTimeMillis()+60000))
+                .signWith(Keys.hmacShaKeyFor(KEY.getBytes(java.nio.charset.StandardCharsets.UTF_8))).compact();
+        expectProfile(value, 401);
+    }
+    @Test void validHeaderIsAuthorized() throws Exception {
+        expectProfile(token(), 200);
+        verify(userService).getProfile(1L);
+    }
+    @Test void validCookieIsAuthorized() throws Exception {
+        mvc.perform(get("/user/profile").cookie(new Cookie("aqua_token", token())))
+                .andExpect(jsonPath("$.code").value(200)).andExpect(jsonPath("$.data.id").value(1));
+    }
+    @Test void disabledUserIsRejected() throws Exception { user.setStatus((byte) 0); expectProfile(token(), 401); }
+    @Test void deletedUserIsRejected() throws Exception { when(users.selectById(1L)).thenReturn(null); expectProfile(token(), 401); }
+    @Test void changedRoleInvalidatesOldToken() throws Exception { user.setUserType("REGULATOR"); expectProfile(token(), 401); }
+    @Test void changedPasswordVersionInvalidatesOldToken() throws Exception { user.setAuthVersion(1L); expectProfile(token(), 401); }
+    @Test void revokedTokenIsRejected() throws Exception {
+        String value = token(); revoked.add(jwt.getJtiFromToken(value)); expectProfile(value, 401);
+    }
+    @Test void crossFarmHeaderIsRejected() throws Exception {
+        Farm other = new Farm(); other.setId(20L); other.setUserId(2L); when(farms.selectById(20L)).thenReturn(other);
+        mvc.perform(get("/user/profile").header("Authorization", "Bearer " + token()).header("X-Current-Farm-Id", "20"))
+                .andExpect(jsonPath("$.code").value(403));
+        verifyNoInteractions(userService);
+    }
+    @Test void deletedDefaultFarmStillAllowsProfile() throws Exception { when(farms.selectById(10L)).thenReturn(null); expectProfile(token(), 200); }
+    @Test void invalidFarmHeaderReturns400() throws Exception {
+        mvc.perform(get("/user/profile").header("Authorization", "Bearer " + token()).header("X-Current-Farm-Id", "bad"))
+                .andExpect(jsonPath("$.code").value(400));
+    }
+    @Test void farmerCannotReadRegulatorData() throws Exception {
+        mvc.perform(get("/regulator/dashboard/stats").header("Authorization", "Bearer " + token()))
+                .andExpect(jsonPath("$.code").value(403));
+        verifyNoInteractions(regulatorService);
+    }
+    @Test void farmerCannotManageUsers() throws Exception {
+        mvc.perform(get("/user/list").header("Authorization", "Bearer " + token()))
+                .andExpect(jsonPath("$.code").value(403));
+        verifyNoInteractions(userService);
+    }
+    @Test void regulatorCanReadRegulatorData() throws Exception {
+        user.setUserType("REGULATOR");
+        mvc.perform(get("/regulator/dashboard/stats").header("Authorization", "Bearer " + jwt.generateToken(1L, "test-subject", "REGULATOR", null)))
                 .andExpect(jsonPath("$.code").value(200));
-
-        System.out.println("✅ 退出登录成功，Token 已加入黑名单 & Cookie 已销毁");
-
-        // 7.2 用已撤销的 Token 再次访问 → 应 401
-        mockMvc.perform(get("/user/list")
-                        .header("Authorization", "Bearer " + accessToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(401));
-
-        System.out.println("✅ 已撤销 Token 无法再次访问（黑名单生效）");
+        verify(regulatorService).getDashboardStats();
     }
-
-    // ==================== 8️⃣ 整体总结 ====================
-
-    @Test
-    @Order(8)
-    @DisplayName("🏁 安全闭环总结")
-    void securitySummary() {
-        System.out.println("\n═══════════════════════════════════════════");
-        System.out.println("  🔐 JWT 安全体系闭环验证：全部通过 ✅");
-        System.out.println("═══════════════════════════════════════════");
-        System.out.println("  ✅ CORS 预检 → OK");
-        System.out.println("  ✅ 登录认证 → OK");
-        System.out.println("  ✅ Cookie 认证通道 → OK");
-        System.out.println("  ✅ Header 认证通道 → OK");
-        System.out.println("  ✅ 无 Token 拦截 → OK");
-        System.out.println("  ✅ 伪造 Token 拦截 → OK");
-        System.out.println("  ✅ 退出登录黑名单 → OK");
-        System.out.println("═══════════════════════════════════════════\n");
+    @Test void requestUserIdCannotReplaceIdentity() throws Exception {
+        mvc.perform(get("/user/profile").param("userId", "2").header("Authorization", "Bearer " + token()))
+                .andExpect(jsonPath("$.data.id").value(1));
+        verify(userService).getProfile(1L);
+    }
+    @Test void logoutRevokesTokenAndClearsCookie() throws Exception {
+        String value = token();
+        mvc.perform(post("/auth/logout").cookie(new Cookie("aqua_token", value)))
+                .andExpect(jsonPath("$.code").value(200)).andExpect(cookie().maxAge("aqua_token", 0));
+        expectProfile(value, 401);
+    }
+    @Test void trustedCorsPreflightPasses() throws Exception {
+        mvc.perform(options("/auth/login").header("Origin", "http://localhost:5173").header("Access-Control-Request-Method", "POST"))
+                .andExpect(status().isOk()).andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:5173"));
+    }
+    @Test void untrustedCorsOriginIsRejected() throws Exception {
+        mvc.perform(options("/auth/login").header("Origin", "https://untrusted.invalid").header("Access-Control-Request-Method", "POST"))
+                .andExpect(status().isForbidden()).andExpect(header().doesNotExist("Access-Control-Allow-Origin"));
+    }
+    @Test void loginVerifiesPasswordAndSetsHttpOnlyCookie() throws Exception {
+        String credential = UUID.randomUUID().toString();
+        user.setPassword(encoder.encode(credential)); user.setUsername("test user");
+        when(userService.getOne(any(com.baomidou.mybatisplus.core.conditions.Wrapper.class))).thenReturn(user);
+        String body = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(Map.of("phone", "test-subject", "password", credential));
+        var response = mvc.perform(post("/auth/login").contentType("application/json").content(body))
+                .andExpect(jsonPath("$.code").value(200)).andExpect(cookie().httpOnly("aqua_token", true))
+                .andExpect(jsonPath("$.data.user.role").value("FARMER")).andExpect(jsonPath("$.data.user.password").doesNotExist())
+                .andReturn().getResponse();
+        org.assertj.core.api.Assertions.assertThat(jwt.validateToken(response.getCookie("aqua_token").getValue())).isTrue();
+    }
+    @Test void missingLoginFieldsReturn400() throws Exception {
+        mvc.perform(post("/auth/login").contentType("application/json").content("{}"))
+                .andExpect(jsonPath("$.code").value(400));
+    }
+    @Test void staleFarmHeaderCannotBlockLogout() throws Exception {
+        mvc.perform(post("/auth/logout").cookie(new Cookie("aqua_token", token())).header("X-Current-Farm-Id", "20"))
+                .andExpect(jsonPath("$.code").value(200)).andExpect(cookie().maxAge("aqua_token", 0));
     }
 }

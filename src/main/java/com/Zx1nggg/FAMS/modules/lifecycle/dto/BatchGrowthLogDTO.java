@@ -20,12 +20,16 @@ public class BatchGrowthLogDTO {
     @NotNull(message = "日期不能为空")
     private LocalDate logDate;
 
+    @jakarta.validation.constraints.PositiveOrZero
     private BigDecimal avgLength;
 
+    @jakarta.validation.constraints.PositiveOrZero
     private BigDecimal avgWeight;
 
+    @jakarta.validation.constraints.PositiveOrZero
     private Integer routineDeathCount;
 
+    @jakarta.validation.constraints.PositiveOrZero
     private Integer abnormalDeathCount;
 
     private String abnormalReason;

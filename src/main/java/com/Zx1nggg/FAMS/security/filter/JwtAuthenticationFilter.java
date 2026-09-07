@@ -3,6 +3,9 @@ package com.Zx1nggg.FAMS.security.filter;
 import com.Zx1nggg.FAMS.security.service.TokenBlacklistService;
 import com.Zx1nggg.FAMS.security.service.UserFarmCacheService;
 import com.Zx1nggg.FAMS.security.util.JwtUtils;
+import com.Zx1nggg.FAMS.common.api.Result;
+import com.Zx1nggg.FAMS.modules.system.entity.User;
+import com.Zx1nggg.FAMS.modules.system.mapper.UserMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
@@ -25,6 +28,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -40,7 +45,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Autowired
     private UserFarmCacheService userFarmCacheService;
 
+    @Autowired
+    private UserMapper userMapper;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        // 旧 Cookie 不应阻止重新登录或提交公开申请。
+        return Set.of("/auth/login", "/auth/register", "/auth/check-phone", "/auth/registration-status", "/test/health")
+                .contains(requestPath(request));
+    }
+
+    private String requestPath(HttpServletRequest request) {
+        return request.getRequestURI().substring(request.getContextPath().length());
+    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
@@ -67,59 +86,73 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
         }
 
-        // 3. 校验 Token
-        if (StringUtils.hasText(token) && jwtUtils.validateToken(token)) {
-            // 3.1 检查 Token 是否已被加入黑名单（退出登录后立即失效）
-            String jti = jwtUtils.getJtiFromToken(token);
-            if (jti != null && tokenBlacklistService.isBlacklisted(jti)) {
-                log.warn("Token 已被撤销（jti={}），拒绝授权", jti);
+        // 签名、必需声明与过期时间仅解析一次；异常令牌不建立认证上下文。
+        Claims claims = StringUtils.hasText(token) ? jwtUtils.getClaimsFromToken(token) : null;
+        if (claims != null) {
+            Long userId;
+            String userType;
+            Long authVersion;
+            try {
+                userId = claims.get("userId", Long.class);
+                userType = claims.get("userType", String.class);
+                authVersion = claims.get("authVersion", Long.class);
+                if (authVersion == null) authVersion = 0L; // 兼容首次迁移前的 JWT。
+                if (userId == null || userId <= 0 || !StringUtils.hasText(claims.getSubject())
+                        || !StringUtils.hasText(claims.getId()) || claims.getExpiration() == null
+                        || userType == null || !Set.of("ADMIN", "REGULATOR", "FARMER").contains(userType)) {
+                    chain.doFilter(request, response);
+                    return;
+                }
+            } catch (io.jsonwebtoken.JwtException | IllegalArgumentException e) {
                 chain.doFilter(request, response);
                 return;
             }
-
-            // 获取载荷
-            Claims claims = jwtUtils.getClaimsFromToken(token);
-            String phone = claims.getSubject();
-            String userType = claims.get("userType", String.class);
-            Long userId = claims.get("userId", Long.class);
-            // 从 Claims 中获取 farmId，用于跨域数据隔离校验
-            Long farmId = claims.get("farmId", Long.class);
-
-            // 4. 设置认证信息到 Spring Security 上下文
-            if (phone != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-                UsernamePasswordAuthenticationToken authenticationToken =
-                        new UsernamePasswordAuthenticationToken(
-                                userId, // Principal: 存入 userId，方便后续业务随时获取
-                                null,
-                                Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + userType))
-                        );
-                authenticationToken.setDetails(new org.springframework.security.web.authentication.WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authenticationToken);
-
-                // 将用户信息也设置到 request 属性中，供 Controller 或 Interceptor 使用
-                request.setAttribute("currentUserId", userId);
-                request.setAttribute("currentUserType", userType);
-
-                // 5. 校验 X-Current-Farm-Id（FARMER 专属，从 Redis 校验权限）
-                String headerFarmId = request.getHeader("X-Current-Farm-Id");
-                if ("FARMER".equals(userType) && StringUtils.hasText(headerFarmId)) {
-                    try {
-                        Long requestedFarmId = Long.valueOf(headerFarmId);
-                        if (!userFarmCacheService.isAuthorized(userId, requestedFarmId)) {
-                            log.warn("用户 {} 无权操作农场 {}，拒绝请求", userId, requestedFarmId);
-                            sendErrorResponse(response, HttpServletResponse.SC_FORBIDDEN,
-                                    403, "您没有该农场的操作权限");
+            try {
+                User user = userMapper.selectById(userId);
+                if (user == null || !Byte.valueOf((byte) 1).equals(user.getStatus())
+                        || !Objects.equals(authVersion, user.getAuthVersion() == null ? 0L : user.getAuthVersion())
+                        || !Objects.equals(userType, user.getUserType())
+                        || !Objects.equals(claims.getSubject(), user.getPhone())
+                        || tokenBlacklistService.isBlacklisted(claims.getId())) {
+                    sendErrorResponse(response, 200, 401, "登录状态已失效，请重新登录");
+                    return;
+                }
+                Long farmId = null;
+                String path = requestPath(request);
+                boolean farmIndependent = path.equals("/auth/logout")
+                        || path.equals("/base/farm") || path.startsWith("/base/farm/");
+                if ("FARMER".equals(userType) && !farmIndependent) {
+                    String headerFarmId = request.getHeader("X-Current-Farm-Id");
+                    if (StringUtils.hasText(headerFarmId)) {
+                        try {
+                            farmId = Long.valueOf(headerFarmId);
+                            if (farmId <= 0) throw new NumberFormatException();
+                        } catch (NumberFormatException e) {
+                            sendErrorResponse(response, 200, 400, "X-Current-Farm-Id 格式错误");
                             return;
                         }
-                        request.setAttribute("currentFarmId", requestedFarmId);
-                    } catch (NumberFormatException e) {
-                        sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST,
-                                400, "X-Current-Farm-Id 格式错误");
-                        return;
+                    } else {
+                        farmId = user.getFarmId();
                     }
-                } else {
-                    request.setAttribute("currentFarmId", farmId);
+                    if (farmId != null && !userFarmCacheService.isAuthorized(userId, farmId)) {
+                        if (StringUtils.hasText(headerFarmId)) {
+                            sendErrorResponse(response, 200, 403, "您没有该农场的操作权限，请重新选择养殖场");
+                            return;
+                        }
+                        farmId = null; // 旧默认农场已删除/转让；业务接口仍必须选择有权农场。
+                    }
                 }
+                // 所有检查完成后再提交认证，客户端字段不能覆盖身份与角色。
+                UsernamePasswordAuthenticationToken authenticationToken =
+                        new UsernamePasswordAuthenticationToken(userId, null,
+                                Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + userType)));
+                SecurityContextHolder.getContext().setAuthentication(authenticationToken);
+                request.setAttribute("currentUserId", userId);
+                request.setAttribute("currentUserType", userType);
+                request.setAttribute("currentFarmId", farmId);
+            } catch (org.springframework.dao.DataAccessException e) {
+                sendErrorResponse(response, 200, 503, "认证服务暂不可用，请稍后重试");
+                return;
             }
         }
 
@@ -132,7 +165,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         response.setStatus(httpStatus);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-        Map<String, Object> body = Map.of("code", code, "message", message, "data", null);
-        response.getWriter().write(objectMapper.writeValueAsString(body));
+        objectMapper.writeValue(response.getWriter(), Result.error(code, message));
     }
 }

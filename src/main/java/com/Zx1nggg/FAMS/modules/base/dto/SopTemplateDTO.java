@@ -11,14 +11,19 @@ public class SopTemplateDTO {
     private Long categoryId;
 
     @NotBlank(message = "养殖阶段不能为空")
+    @jakarta.validation.constraints.Size(max = 50)
     private String stageName;
 
     @NotNull(message = "时间偏移量不能为空")
+    @jakarta.validation.constraints.Min(0)
+    @jakarta.validation.constraints.Max(3650)
     private Integer dayOffset;
 
     @NotBlank(message = "任务类型不能为空")
+    @jakarta.validation.constraints.Pattern(regexp = "DISINFECT|TEST|WATER|FEED")
     private String taskType;
 
     @NotBlank(message = "操作指南不能为空")
+    @jakarta.validation.constraints.Size(max = 200)
     private String taskDesc;
 }

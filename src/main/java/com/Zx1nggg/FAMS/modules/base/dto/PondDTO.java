@@ -15,5 +15,6 @@ public class PondDTO {
     private String pondName;
 
     @NotNull(message = "面积不能为空")
+    @jakarta.validation.constraints.Positive
     private BigDecimal areaMu;
 }

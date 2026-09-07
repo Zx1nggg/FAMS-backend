@@ -28,6 +28,9 @@ public class PondFeedLogServiceImpl extends ServiceImpl<PondFeedLogMapper, PondF
     @Resource
     private PondMapper pondMapper;
 
+    @Resource
+    private com.Zx1nggg.FAMS.modules.lifecycle.service.LifecycleAccessService lifecycleAccess;
+
     @Override
     public Page<PondFeedLogVO> pageQuery(Integer pageNum, Integer pageSize,
                                          Long pondId, Long farmId, Long patrolLogId,
@@ -76,7 +79,9 @@ public class PondFeedLogServiceImpl extends ServiceImpl<PondFeedLogMapper, PondF
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public PondFeedLogVO create(PondFeedLogDTO dto) {
+        lifecycleAccess.requirePatrol(dto.getPatrolLogId(), dto.getPondId(), null);
         // 🌟 数据隔离
         checkFarmAccessByPondId(dto.getPondId());
         PondFeedLog log = new PondFeedLog();
@@ -88,12 +93,15 @@ public class PondFeedLogServiceImpl extends ServiceImpl<PondFeedLogMapper, PondF
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public PondFeedLogVO update(Long id, PondFeedLogDTO dto) {
         PondFeedLog log = getById(id);
         if (log == null) return null;
         // 🌟 数据隔离
         checkFarmAccessByPondId(log.getPondId());
         checkFarmAccessByPondId(dto.getPondId());
+        lifecycleAccess.requirePatrol(log.getPatrolLogId(), log.getPondId(), null);
+        lifecycleAccess.requirePatrol(dto.getPatrolLogId(), dto.getPondId(), null);
         BeanUtils.copyProperties(dto, log);
         log.setId(id);
         // 自动计算饲料金额
@@ -103,13 +111,10 @@ public class PondFeedLogServiceImpl extends ServiceImpl<PondFeedLogMapper, PondF
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public void batchDelete(List<Long> ids) {
-        // 🌟 数据隔离
-        if (SecurityUtils.isFarmer()) {
-            List<PondFeedLog> logs = listByIds(ids);
-            for (PondFeedLog log : logs) {
-                checkFarmAccessByPondId(log.getPondId());
-            }
+        for (PondFeedLog log : listByIds(ids)) {
+            lifecycleAccess.requirePatrol(log.getPatrolLogId(), log.getPondId(), null);
         }
         removeByIds(ids);
     }
@@ -130,7 +135,7 @@ public class PondFeedLogServiceImpl extends ServiceImpl<PondFeedLogMapper, PondF
      * 🌟 数据隔离：校验 FARMER 是否有权操作该池塘所属农场
      */
     private void checkFarmAccessByPondId(Long pondId) {
-        if (pondId == null) return;
+        if (pondId == null) throw new BusinessException(400, "池塘不能为空");
         if (SecurityUtils.isFarmer()) {
             Pond pond = pondMapper.selectById(pondId);
             if (pond == null || !Objects.equals(pond.getFarmId(), SecurityUtils.getCurrentFarmId())) {

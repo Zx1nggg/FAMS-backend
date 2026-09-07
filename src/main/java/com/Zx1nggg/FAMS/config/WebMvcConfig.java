@@ -11,6 +11,9 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration
 public class WebMvcConfig implements WebMvcConfigurer {
 
+    @org.springframework.beans.factory.annotation.Value("${app.upload.avatar-dir:uploads/avatar}")
+    private String avatarDir;
+
     @Autowired
     private JwtAuthenticationInterceptor jwtAuthenticationInterceptor;
 
@@ -38,8 +41,8 @@ public class WebMvcConfig implements WebMvcConfigurer {
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
         // 映射 /uploads/** 到文件系统中的绝对路径
-        registry.addResourceHandler("/uploads/**")
-                .addResourceLocations("file:///D:/华农/毕业设计/FAMS/uploads/");
+        registry.addResourceHandler("/uploads/avatar/**")
+                .addResourceLocations(java.nio.file.Path.of(avatarDir).toAbsolutePath().normalize().toUri().toString() + "/");
     }
 
     // CORS 由 Spring Security 统一处理，避免与 SecurityConfig 中的 cors() 冲突

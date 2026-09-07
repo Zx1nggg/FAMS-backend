@@ -34,6 +34,9 @@ public class PurchaseBatchServiceImpl extends ServiceImpl<PurchaseBatchMapper, P
     @Resource
     private SeedlingDictMapper seedlingDictMapper;
 
+    @Resource private com.Zx1nggg.FAMS.modules.base.mapper.FarmMapper farmMapper;
+    @Resource private com.Zx1nggg.FAMS.modules.base.mapper.StockingMapper stockingMapper;
+
     private static final String BATCH_NO_PREFIX = "BN";
 
     @Override
@@ -66,7 +69,13 @@ public class PurchaseBatchServiceImpl extends ServiceImpl<PurchaseBatchMapper, P
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public PurchaseBatchVO create(PurchaseBatchDTO dto) {
+        validateReferences(dto);
+        if (dto.getBatchStatus() == null) dto.setBatchStatus((byte) 0);
+        if (dto.getBatchStatus() != 0 && dto.getBatchStatus() != 1) {
+            throw new BusinessException(400, "新增采购只能为待检疫或已检疫入库");
+        }
         PurchaseBatch batch = new PurchaseBatch();
         BeanUtils.copyProperties(dto, batch);
         batch.setFarmId(resolveFarmId(dto.getFarmId()));
@@ -78,14 +87,35 @@ public class PurchaseBatchServiceImpl extends ServiceImpl<PurchaseBatchMapper, P
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public PurchaseBatchVO update(Long id, PurchaseBatchDTO dto) {
-        PurchaseBatch batch = getById(id);
+        PurchaseBatch batch = baseMapper.selectForUpdate(id);
         if (batch == null) {
             return null;
         }
         checkFarmAccess(batch);
         assertBatchNotHarvested(batch);
+        validateReferences(dto);
+        if (dto.getBatchNo() != null && !dto.getBatchNo().equals(batch.getBatchNo())) {
+            throw new BusinessException(400, "批次号不可变更");
+        }
+        if (batch.getBatchStatus() != null && batch.getBatchStatus() == 2) {
+            if (!java.util.Objects.equals(dto.getBatchStatus(), batch.getBatchStatus())
+                    || !java.util.Objects.equals(dto.getUnitQty(), batch.getUnitQty())
+                    || !java.util.Objects.equals(dto.getDensityPerUnit(), batch.getDensityPerUnit())
+                    || !java.util.Objects.equals(dto.getSeedlingId(), batch.getSeedlingId())
+                    || !java.util.Objects.equals(dto.getPurchaseDate(), batch.getPurchaseDate())
+                    || (dto.getUnitPrice() == null ? batch.getUnitPrice() != null
+                        : batch.getUnitPrice() == null || dto.getUnitPrice().compareTo(batch.getUnitPrice()) != 0)
+                    || !java.util.Objects.equals(resolveFarmId(dto.getFarmId()), batch.getFarmId())) {
+                throw new BusinessException(400, "投放后不可修改批次状态、数量、密度、苗种、养殖场、采购日期或单价");
+            }
+        } else if (dto.getBatchStatus() == null || dto.getBatchStatus() < 0 || dto.getBatchStatus() > 1) {
+            throw new BusinessException(400, "养殖中和已出库状态由投放、出塘流程更新");
+        }
+        String batchNo = batch.getBatchNo();
         BeanUtils.copyProperties(dto, batch);
+        batch.setBatchNo(batchNo);
         batch.setId(id);
         batch.setFarmId(resolveFarmId(dto.getFarmId()));
         batch.setEstimatedTotalQty(calcTotalQty(dto.getUnitQty(), dto.getDensityPerUnit()));
@@ -95,7 +125,10 @@ public class PurchaseBatchServiceImpl extends ServiceImpl<PurchaseBatchMapper, P
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public void batchDelete(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) throw new BusinessException(400, "请选择采购批次");
+        ids.stream().sorted().forEach(baseMapper::selectForUpdate);
         List<PurchaseBatch> batches = listByIds(ids);
         if (SecurityUtils.isFarmer()) {
             Long userFarmId = SecurityUtils.getCurrentFarmId();
@@ -107,6 +140,11 @@ public class PurchaseBatchServiceImpl extends ServiceImpl<PurchaseBatchMapper, P
         }
         for (PurchaseBatch batch : batches) {
             assertBatchNotHarvested(batch);
+            if ((batch.getBatchStatus() != null && batch.getBatchStatus() >= 2)
+                    || stockingMapper.selectCount(new LambdaQueryWrapper<com.Zx1nggg.FAMS.modules.base.entity.Stocking>()
+                            .eq(com.Zx1nggg.FAMS.modules.base.entity.Stocking::getBatchId, batch.getId())) > 0) {
+                throw new BusinessException(400, "已有投放的采购批次不可删除");
+            }
         }
         removeByIds(ids);
     }
@@ -146,10 +184,25 @@ public class PurchaseBatchServiceImpl extends ServiceImpl<PurchaseBatchMapper, P
     }
 
     private int calcTotalQty(Integer unitQty, Integer densityPerUnit) {
-        if (unitQty == null || densityPerUnit == null) {
-            return 0;
+        if (unitQty == null || densityPerUnit == null || unitQty <= 0 || densityPerUnit <= 0
+                || (long) unitQty * densityPerUnit > Integer.MAX_VALUE) {
+            throw new BusinessException(400, "采购件数和密度必须为正数且换算尾数不能超出整数范围");
         }
         return unitQty * densityPerUnit;
+    }
+
+    private void validateReferences(PurchaseBatchDTO dto) {
+        if (farmMapper.selectById(resolveFarmId(dto.getFarmId())) == null) {
+            throw new BusinessException(404, "养殖场不存在");
+        }
+        if (dto.getSupplierId() == null || supplierMapper.selectForUpdate(dto.getSupplierId()) == null) {
+            throw new BusinessException(404, "供应商不存在");
+        }
+        SeedlingDict seedling = dto.getSeedlingId() == null ? null : seedlingDictMapper.selectForUpdate(dto.getSeedlingId());
+        if (seedling == null) throw new BusinessException(404, "苗种不存在");
+        if (SecurityUtils.isFarmer() && !java.util.Objects.equals(seedling.getUserId(), SecurityUtils.getCurrentUserId())) {
+            throw new BusinessException(403, "无权使用其他用户的苗种字典");
+        }
     }
 
     /**

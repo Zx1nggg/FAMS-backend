@@ -26,6 +26,15 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/user")
 public class UserController {
+    @PutMapping("/password")
+    public Result<Void> changePassword(@jakarta.validation.Valid @RequestBody com.Zx1nggg.FAMS.modules.system.dto.ChangePasswordDTO dto,
+                                      jakarta.servlet.http.HttpServletResponse response) {
+        userService.changePassword(SecurityUtils.getCurrentUserId(), dto);
+        jakarta.servlet.http.Cookie cookie = new jakarta.servlet.http.Cookie("aqua_token", "");
+        cookie.setHttpOnly(true); cookie.setPath("/"); cookie.setMaxAge(0); cookie.setAttribute("SameSite", "Lax");
+        response.addCookie(cookie);
+        return Result.success();
+    }
 
     @Autowired
     private IUserService userService;
@@ -45,7 +54,7 @@ public class UserController {
     @Log(title = "用户资料", businessType = 2)
     @Operation(summary = "更新当前用户个人资料")
     @PutMapping("/profile")
-    public Result<UserProfileVO> updateProfile(@RequestBody UpdateUserProfileDTO dto) {
+    public Result<UserProfileVO> updateProfile(@jakarta.validation.Valid @RequestBody UpdateUserProfileDTO dto) {
         Long userId = SecurityUtils.getCurrentUserId();
         UserProfileVO vo = userService.updateProfile(userId, dto);
         if (vo == null) return Result.error(404, "用户不存在");
@@ -87,31 +96,27 @@ public class UserController {
             return Result.error(400, "请选择要上传的头像文件");
         }
 
-        // 仅允许图片格式
-        String contentType = file.getContentType();
-        if (contentType == null || !contentType.startsWith("image/")) {
-            return Result.error(400, "仅支持上传图片文件");
-        }
-
+        if (file.getSize() > 5 * 1024 * 1024) return Result.error(400, "头像大小不能超过 5 MB");
         Long userId = SecurityUtils.getCurrentUserId();
-        try {
-            // 确保上传目录存在
-            Path uploadPath = Paths.get(avatarDir);
-            if (!Files.exists(uploadPath)) {
-                Files.createDirectories(uploadPath);
-            }
-
-            // 生成唯一文件名：userId_uuid.扩展名
-            String originalName = file.getOriginalFilename();
-            String ext = "";
-            if (originalName != null && originalName.contains(".")) {
-                ext = originalName.substring(originalName.lastIndexOf("."));
-            }
-            String fileName = userId + "_" + UUID.randomUUID().toString().substring(0, 8) + ext;
-
-            // 保存文件
+        try (var input = javax.imageio.ImageIO.createImageInputStream(file.getInputStream())) {
+            var readers = javax.imageio.ImageIO.getImageReaders(input);
+            if (!readers.hasNext()) return Result.error(400, "仅支持有效的 PNG、JPEG 或 GIF 图片");
+            var reader = readers.next();
+            java.awt.image.BufferedImage image;
+            try {
+                reader.setInput(input);
+                String format = reader.getFormatName().toLowerCase(java.util.Locale.ROOT);
+                if (!java.util.Set.of("png", "jpeg", "gif").contains(format)
+                        || reader.getWidth(0) > 4096 || reader.getHeight(0) > 4096) {
+                    return Result.error(400, "头像格式不支持或尺寸超过 4096 像素");
+                }
+                image = reader.read(0);
+            } finally { reader.dispose(); }
+            Path uploadPath = Paths.get(avatarDir).toAbsolutePath().normalize();
+            Files.createDirectories(uploadPath);
+            String fileName = userId + "_" + UUID.randomUUID() + ".png";
             File dest = uploadPath.resolve(fileName).toFile();
-            file.transferTo(dest);
+            if (!javax.imageio.ImageIO.write(image, "png", dest)) throw new IOException("Image encoder unavailable");
 
             // 存入数据库的相对路径（相对于资源映射的根目录）
             String avatarPath = "uploads/avatar/" + fileName;
@@ -119,7 +124,7 @@ public class UserController {
 
             return Result.success(avatarPath);
         } catch (IOException e) {
-            return Result.error(500, "头像上传失败: " + e.getMessage());
+            return Result.error(400, "无法读取或保存头像，请检查图片后重试");
         }
     }
 }

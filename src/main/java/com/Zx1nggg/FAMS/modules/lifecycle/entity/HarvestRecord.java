@@ -59,7 +59,7 @@ public class HarvestRecord implements Serializable {
     /**
      * 算法预测产量(kg) (供后期做算法精确度误差分析)
      */
-    @TableField("predicted_weight_kg")
+    @TableField(value = "predicted_weight_kg", updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     @Schema(description = "算法预测产量(kg) (供后期做算法精确度误差分析)")
     private BigDecimal predictedWeightKg;
 
@@ -73,7 +73,7 @@ public class HarvestRecord implements Serializable {
     /**
      * 最终出池抽测均重(g/尾)
      */
-    @TableField("actual_avg_weight_g")
+    @TableField(value = "actual_avg_weight_g", updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     @Schema(description = "最终出池抽测均重(g/尾)")
     private BigDecimal actualAvgWeightG;
 
@@ -108,56 +108,56 @@ public class HarvestRecord implements Serializable {
     /**
      * 出塘单价(元/kg)
      */
-    @TableField("unit_price")
+    @TableField(value = "unit_price", updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     @Schema(description = "出塘单价(元/kg)")
     private java.math.BigDecimal unitPrice;
 
     /**
      * 总收入(元) = actual_total_weight_kg × unit_price
      */
-    @TableField("total_revenue")
+    @TableField(value = "total_revenue", updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     @Schema(description = "总收入(元) = actual_total_weight_kg × unit_price")
     private java.math.BigDecimal totalRevenue;
 
     /**
      * 苗种成本(元)
      */
-    @TableField("seedling_cost")
+    @TableField(value = "seedling_cost", updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     @Schema(description = "苗种成本(元)")
     private java.math.BigDecimal seedlingCost;
 
     /**
      * 饲料成本(元)
      */
-    @TableField("feed_cost")
+    @TableField(value = "feed_cost", updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     @Schema(description = "饲料成本(元)")
     private java.math.BigDecimal feedCost;
 
     /**
      * 药品成本(元)
      */
-    @TableField("medicine_cost")
+    @TableField(value = "medicine_cost", updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     @Schema(description = "药品成本(元)")
     private java.math.BigDecimal medicineCost;
 
     /**
      * 其他成本(元)
      */
-    @TableField("other_cost")
+    @TableField(value = "other_cost", updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     @Schema(description = "其他成本(元)")
     private java.math.BigDecimal otherCost;
 
     /**
      * 总成本(元) = 四项成本之和
      */
-    @TableField("total_cost")
+    @TableField(value = "total_cost", updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     @Schema(description = "总成本(元) = 四项成本之和")
     private java.math.BigDecimal totalCost;
 
     /**
      * 净利润(元) = total_revenue - total_cost
      */
-    @TableField("net_profit")
+    @TableField(value = "net_profit", updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     @Schema(description = "净利润(元) = total_revenue - total_cost")
     private java.math.BigDecimal netProfit;
 
@@ -171,7 +171,7 @@ public class HarvestRecord implements Serializable {
     /**
      * 备注
      */
-    @TableField("remark")
+    @TableField(value = "remark", updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     @Schema(description = "备注")
     private String remark;
 

@@ -12,5 +12,9 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
  * @since 2026-05-07
  */
 public interface UserMapper extends BaseMapper<User> {
+    @org.apache.ibatis.annotations.Select("SELECT * FROM sys_user WHERE id=#{id} FOR UPDATE")
+    User selectForUpdate(@org.apache.ibatis.annotations.Param("id") Long id);
+    @org.apache.ibatis.annotations.Select("SELECT (SELECT COUNT(*) FROM t_farm WHERE user_id=#{id}) + (SELECT COUNT(*) FROM t_seedling_dict WHERE user_id=#{id})")
+    long countOwnedData(@org.apache.ibatis.annotations.Param("id") Long id);
 
 }

@@ -18,6 +18,8 @@ import java.util.Objects;
 
 @Service
 public class SeedlingDictServiceImpl extends ServiceImpl<SeedlingDictMapper, SeedlingDict> implements ISeedlingDictService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.Zx1nggg.FAMS.modules.system.mapper.UserMapper userMapper;
 
     @Override
     public Page<SeedlingDictVO> pageQuery(Integer pageNum, Integer pageSize, String categoryName) {
@@ -56,12 +58,16 @@ public class SeedlingDictServiceImpl extends ServiceImpl<SeedlingDictMapper, See
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public SeedlingDictVO create(SeedlingDictDTO dto) {
         SeedlingDict dict = new SeedlingDict();
         BeanUtils.copyProperties(dto, dict);
         // 🌟 数据隔离：FARMER 创建时自动绑定本农场
         if (SecurityUtils.isFarmer()) {
             dict.setUserId(SecurityUtils.getCurrentUserId());
+        }
+        if (dict.getUserId() != null && userMapper.selectForUpdate(dict.getUserId()) == null) {
+            throw new BusinessException(404, "所属账号不存在");
         }
         save(dict);
         return toVO(dict);
@@ -84,7 +90,10 @@ public class SeedlingDictServiceImpl extends ServiceImpl<SeedlingDictMapper, See
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public void batchDelete(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) throw new BusinessException(400, "请选择苗种");
+        ids.stream().distinct().sorted().forEach(baseMapper::selectForUpdate);
         // 🌟 数据隔离：FARMER 只能删除自己的苗种字典
         if (SecurityUtils.isFarmer()) {
             List<SeedlingDict> dicts = listByIds(ids);
@@ -94,6 +103,9 @@ public class SeedlingDictServiceImpl extends ServiceImpl<SeedlingDictMapper, See
                     throw new BusinessException(403, "无权删除苗种字典 ID=" + d.getId());
                 }
             }
+        }
+        for (Long id : ids) {
+            if (baseMapper.countReferences(id) > 0) throw new BusinessException(400, "苗种被采购或 SOP 引用，不能删除");
         }
         removeByIds(ids);
     }

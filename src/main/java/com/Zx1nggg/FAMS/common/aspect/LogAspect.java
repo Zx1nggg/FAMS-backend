@@ -45,13 +45,23 @@ public class LogAspect {
             Object result = joinPoint.proceed();
 
             record.setStatus((byte) 1);
-            operLogService.save(record);
+            saveAudit(record);
             return result;
         } catch (Throwable e) {
             record.setStatus((byte) 0);
-            record.setErrorMsg(truncate(e.getMessage(), 500));
-            operLogService.save(record);
+            record.setErrorMsg(e instanceof com.Zx1nggg.FAMS.common.exception.BusinessException
+                    ? truncate(e.getMessage(), 500) : e.getClass().getSimpleName());
+            saveAudit(record);
             throw e;
+        }
+    }
+
+    private void saveAudit(OperLog record) {
+        try {
+            if (!operLogService.save(record)) log.error("操作审计写入失败，业务类型：{}", record.getBusinessType());
+        } catch (RuntimeException e) {
+            // 控制器调用的业务事务可能已经提交；审计故障不能伪装成业务失败或覆盖原异常。
+            log.error("操作审计写入失败，业务类型：{}，异常类型：{}", record.getBusinessType(), e.getClass().getSimpleName());
         }
     }
 

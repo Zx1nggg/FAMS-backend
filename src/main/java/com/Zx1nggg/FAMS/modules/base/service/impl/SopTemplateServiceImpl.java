@@ -15,6 +15,14 @@ import java.util.List;
 
 @Service
 public class SopTemplateServiceImpl extends ServiceImpl<SopTemplateMapper, SopTemplate> implements ISopTemplateService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.Zx1nggg.FAMS.modules.base.mapper.SeedlingDictMapper seedlingMapper;
+
+    private void validate(SopTemplateDTO dto) {
+        if (dto.getCategoryId() == null || seedlingMapper.selectForUpdate(dto.getCategoryId()) == null) {
+            throw new com.Zx1nggg.FAMS.common.exception.BusinessException(404, "适用苗种不存在");
+        }
+    }
 
     @Override
     public Page<SopTemplateVO> pageQuery(Integer pageNum, Integer pageSize, Long categoryId, String stageName, String taskType) {
@@ -40,7 +48,9 @@ public class SopTemplateServiceImpl extends ServiceImpl<SopTemplateMapper, SopTe
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public SopTemplateVO create(SopTemplateDTO dto) {
+        validate(dto);
         SopTemplate template = new SopTemplate();
         BeanUtils.copyProperties(dto, template);
         save(template);
@@ -48,7 +58,9 @@ public class SopTemplateServiceImpl extends ServiceImpl<SopTemplateMapper, SopTe
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public SopTemplateVO update(Long id, SopTemplateDTO dto) {
+        validate(dto);
         SopTemplate template = getById(id);
         if (template == null) {
             return null;

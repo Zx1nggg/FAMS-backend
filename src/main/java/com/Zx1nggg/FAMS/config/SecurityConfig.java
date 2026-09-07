@@ -1,9 +1,11 @@
 package com.Zx1nggg.FAMS.config;
 
 import com.Zx1nggg.FAMS.security.filter.JwtAuthenticationFilter;
+import com.Zx1nggg.FAMS.common.api.Result;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.MediaType;
@@ -37,6 +39,9 @@ public class SecurityConfig {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    @Value("${app.cors.allowed-origins:http://localhost:5173,http://127.0.0.1:5173}")
+    private java.util.List<String> allowedOrigins;
+
     // 密码加密器
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -59,7 +64,7 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowCredentials(true);
-        config.addAllowedOriginPattern("*");
+        config.setAllowedOrigins(allowedOrigins);
         config.addAllowedHeader("*");
         config.addAllowedMethod("*");
         config.setMaxAge(3600L);
@@ -98,19 +103,26 @@ public class SecurityConfig {
                                 "/doc.html",
                                 "/test/health" //连接测试接口
                         ).permitAll()
+                        .requestMatchers("/regulator/**").hasAnyRole("ADMIN", "REGULATOR")
+                        .requestMatchers("/admin/**", "/user/list", "/user/*/status").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/user/**").hasRole("ADMIN")
+                        .requestMatchers("/farmer/**", "/lifecycle/trace/**").hasRole("FARMER")
+                        .requestMatchers(HttpMethod.GET, "/base/**", "/lifecycle/**", "/log/**", "/iot/**")
+                            .hasAnyRole("ADMIN", "REGULATOR", "FARMER")
+                        .requestMatchers("/base/sop-template/**").hasRole("ADMIN")
+                        .requestMatchers("/base/supplier/**").hasAnyRole("ADMIN", "REGULATOR")
+                        .requestMatchers("/base/**", "/lifecycle/**").hasAnyRole("ADMIN", "FARMER")
+                        .requestMatchers("/log/alarm-record/**").hasAnyRole("ADMIN", "REGULATOR", "FARMER")
+                        .requestMatchers("/log/**").hasAnyRole("ADMIN", "FARMER")
                         .anyRequest().authenticated()
                 )
                 // 5. 自定义认证失败 / 权限不足的 JSON 响应
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((request, response, authException) -> {
-                            try {
-                                writeJsonError(response, 401, "Token已过期或非法，请重新登录");
-                            } catch (Exception ignored) {}
+                            writeJsonError(response, 401, "Token已过期或非法，请重新登录");
                         })
                         .accessDeniedHandler((request, response, accessDeniedException) -> {
-                            try {
-                                writeJsonError(response, 403, "权限不足，拒绝访问");
-                            } catch (Exception ignored) {}
+                            writeJsonError(response, 403, "权限不足，拒绝访问");
                         })
                 );
 
@@ -123,11 +135,10 @@ public class SecurityConfig {
     /**
      * 写入标准 JSON 错误响应（统一 Result 格式，与 GlobalExceptionHandler 保持一致）
      */
-    private void writeJsonError(HttpServletResponse response, int code, String message) throws Exception {
+    private void writeJsonError(HttpServletResponse response, int code, String message) throws java.io.IOException {
         response.setStatus(HttpServletResponse.SC_OK); // 业务层按 code 字段判断，HTTP 状态码保持 200
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-        Map<String, Object> body = Map.of("code", code, "message", message, "data", null);
-        objectMapper.writeValue(response.getWriter(), body);
+        objectMapper.writeValue(response.getWriter(), Result.error(code, message));
     }
 }

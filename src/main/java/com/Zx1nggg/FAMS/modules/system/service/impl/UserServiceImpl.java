@@ -19,6 +19,26 @@ import java.util.Objects;
 @Service
 public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IUserService {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
+
+    @Override
+    @org.springframework.transaction.annotation.Transactional
+    public void changePassword(Long userId, com.Zx1nggg.FAMS.modules.system.dto.ChangePasswordDTO dto) {
+        User user = getById(userId);
+        if (user == null || !passwordEncoder.matches(dto.getOldPassword(), user.getPassword())) {
+            throw new BusinessException(400, "原密码不正确");
+        }
+        if (dto.getNewPassword().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 72) {
+            throw new BusinessException(400, "新密码不能超过 72 字节");
+        }
+        long version = user.getAuthVersion() == null ? 0 : user.getAuthVersion();
+        var update = new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<User>()
+                .eq(User::getId, userId).eq(User::getAuthVersion, version)
+                .set(User::getPassword, passwordEncoder.encode(dto.getNewPassword())).set(User::getAuthVersion, version + 1);
+        if (baseMapper.update(null, update) != 1) throw new BusinessException(409, "账号状态已变化，请重新登录后重试");
+    }
+
     @Override
     public UserProfileVO getProfile(Long userId) {
         User user = getById(userId);
@@ -30,23 +50,32 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     public UserProfileVO updateProfile(Long userId, UpdateUserProfileDTO dto) {
         User user = getById(userId);
         if (user == null) return null;
-        if (dto.getRealName() != null) user.setRealName(dto.getRealName());
+        boolean phoneChanged = dto.getPhone() != null && !Objects.equals(dto.getPhone(), user.getPhone());
+        if (dto.getRealName() != null) {
+            dto.setRealName(dto.getRealName().trim());
+            user.setRealName(dto.getRealName());
+        }
+        if (dto.getPhone() != null && !Objects.equals(dto.getPhone(), user.getPhone())
+                && count(new LambdaQueryWrapper<User>().eq(User::getPhone, dto.getPhone()).ne(User::getId, userId)) > 0) {
+            throw new BusinessException(400, "手机号已被使用");
+        }
         if (dto.getPhone() != null) user.setPhone(dto.getPhone());
         if (dto.getEmail() != null) user.setEmail(dto.getEmail());
         if (dto.getGender() != null) user.setGender(dto.getGender());
         if (dto.getAddress() != null) user.setAddress(dto.getAddress());
         if (dto.getUsername()!= null) user.setUsername(dto.getUsername());
-        updateById(user);
-        return toVO(user);
+        User changes = new User();
+        BeanUtils.copyProperties(dto, changes);
+        var wrapper = new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<User>().eq(User::getId, userId);
+        if (phoneChanged) wrapper.setSql("auth_version = auth_version + 1");
+        baseMapper.update(changes, wrapper);
+        return getProfile(userId);
     }
 
     @Override
     public void updateAvatar(Long userId, String avatarPath) {
-        User user = getById(userId);
-        if (user != null) {
-            user.setAvatar(avatarPath);
-            updateById(user);
-        }
+        baseMapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<User>()
+                .eq(User::getId, userId).set(User::getAvatar, avatarPath));
     }
 
     @Override
@@ -89,11 +118,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         if (user == null) {
             throw new BusinessException(404, "用户不存在");
         }
-        user.setStatus(status);
-        updateById(user);
+        baseMapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<User>()
+                .eq(User::getId, id).set(User::getStatus, status).setSql("auth_version = auth_version + 1"));
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public void deleteUsers(List<Long> ids) {
         assertAdmin();
         if (ids == null || ids.isEmpty()) {
@@ -102,6 +132,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         Long currentUserId = SecurityUtils.getCurrentUserId();
         if (ids.stream().anyMatch(id -> Objects.equals(id, currentUserId))) {
             throw new BusinessException(400, "不能删除自己的账号");
+        }
+        ids.stream().distinct().sorted().forEach(baseMapper::selectForUpdate);
+        for (Long id : ids) {
+            if (baseMapper.countOwnedData(id) > 0) throw new BusinessException(400, "账号仍关联养殖场或苗种，请先处理归属或停用账号");
         }
         removeByIds(ids);
     }

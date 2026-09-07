@@ -569,11 +569,9 @@ public class RegulatorServiceImpl implements IRegulatorService {
             }
         }
 
-        HarvestRecord harvest = harvestRecordMapper.selectOne(new LambdaQueryWrapper<HarvestRecord>()
-                .eq(HarvestRecord::getBatchNo, batch.getBatchNo())
-                .eq(HarvestRecord::getIsDeleted, 0)
-                .last("LIMIT 1"));
-        if (harvest != null) {
+        List<HarvestRecord> harvests = harvestRecordMapper.selectList(new LambdaQueryWrapper<HarvestRecord>()
+                .eq(HarvestRecord::getBatchNo, batch.getBatchNo()).orderByAsc(HarvestRecord::getHarvestDate));
+        for (HarvestRecord harvest : harvests) {
             Map<String, Object> detail = new LinkedHashMap<>();
             Pond pond = harvest.getPondId() == null ? null : pondMapper.selectById(harvest.getPondId());
             detail.put("出塘日期", harvest.getHarvestDate());
@@ -754,11 +752,18 @@ public class RegulatorServiceImpl implements IRegulatorService {
                             + (item.getAbnormalDeathCount() == null ? 0L : item.getAbnormalDeathCount())).sum();
             BigDecimal avgWeight = latestAvgWeight(growthLogs);
 
-            HarvestRecord harvest = harvestRecordMapper.selectOne(new LambdaQueryWrapper<HarvestRecord>()
-                    .eq(HarvestRecord::getBatchNo, batch.getBatchNo())
-                    .eq(HarvestRecord::getIsDeleted, 0)
-                    .last("LIMIT 1"));
-            long estimatedHarvestQty = estimateHarvestQty(harvest, stockedQty, deathQty);
+            List<HarvestRecord> harvests = harvestRecordMapper.selectList(new LambdaQueryWrapper<HarvestRecord>()
+                    .eq(HarvestRecord::getBatchNo, batch.getBatchNo()));
+            long estimatedHarvestQty = 0;
+            Map<Long, List<Stocking>> byPond = stockings.stream().collect(Collectors.groupingBy(Stocking::getPondId));
+            for (Map.Entry<Long, List<Stocking>> entry : byPond.entrySet()) {
+                long pondQty = entry.getValue().stream().mapToLong(v -> v.getStockedQty() == null ? 0 : v.getStockedQty()).sum();
+                long pondDeaths = growthLogs.stream().filter(g -> Objects.equals(g.getPondId(), entry.getKey()))
+                        .mapToLong(g -> (g.getRoutineDeathCount() == null ? 0L : g.getRoutineDeathCount())
+                                + (g.getAbnormalDeathCount() == null ? 0L : g.getAbnormalDeathCount())).sum();
+                HarvestRecord pondHarvest = harvests.stream().filter(h -> Objects.equals(h.getPondId(), entry.getKey())).findFirst().orElse(null);
+                estimatedHarvestQty += estimateHarvestQty(pondHarvest, pondQty, pondDeaths);
+            }
 
             BatchSurvivalSnapshot snapshot = new BatchSurvivalSnapshot();
             snapshot.batchNo = batch.getBatchNo();
@@ -769,10 +774,10 @@ public class RegulatorServiceImpl implements IRegulatorService {
             snapshot.stockedQty = stockedQty;
             snapshot.estimatedHarvestQty = estimatedHarvestQty;
             snapshot.deathQty = deathQty;
-            snapshot.totalHarvestWeightKg = harvest == null ? BigDecimal.ZERO : nvl(harvest.getActualTotalWeightKg());
+            snapshot.totalHarvestWeightKg = harvests.stream().map(h -> nvl(h.getActualTotalWeightKg())).reduce(BigDecimal.ZERO, BigDecimal::add);
             snapshot.avgWeightG = avgWeight;
             snapshot.survivalRate = percent(estimatedHarvestQty, stockedQty);
-            snapshot.analysisDate = harvest != null && harvest.getHarvestDate() != null ? harvest.getHarvestDate() : batch.getPurchaseDate();
+            snapshot.analysisDate = harvests.stream().map(HarvestRecord::getHarvestDate).filter(Objects::nonNull).max(LocalDate::compareTo).orElse(batch.getPurchaseDate());
             result.add(snapshot);
         }
         return result;

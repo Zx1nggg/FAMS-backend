@@ -20,7 +20,7 @@ public interface IPondService extends IService<Pond> {
 
     void batchDelete(List<Long> ids);
 
-    void batchDeleteByFarmIds(List<Long> farmIds);
+    void batchDeleteByFarmIds(List<Long> farmIds, String deleteBatch);
 
-    void restoreByFarmIds(List<Long> farmIds);
+    void restoreByFarmIds(List<Long> farmIds, String deleteBatch);
 }

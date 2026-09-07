@@ -31,6 +31,7 @@ public class FarmServiceImpl extends ServiceImpl<FarmMapper, Farm> implements IF
 
     @Autowired
     private IPondService pondService;
+    @Autowired private com.Zx1nggg.FAMS.modules.system.mapper.UserMapper userMapper;
 
     @Override
     public Page<FarmVO> pageQuery(Integer pageNum, Integer pageSize, String farmName) {
@@ -59,6 +60,7 @@ public class FarmServiceImpl extends ServiceImpl<FarmMapper, Farm> implements IF
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public FarmVO create(FarmDTO dto, Long currentUserId) {
         Farm farm = new Farm();
         BeanUtils.copyProperties(dto, farm);
@@ -68,6 +70,7 @@ public class FarmServiceImpl extends ServiceImpl<FarmMapper, Farm> implements IF
         } else if (farm.getUserId() == null) {
             farm.setUserId(currentUserId);
         }
+        requireOwner(farm.getUserId());
         save(farm);
         if (farm.getUserId() != null) {
             userFarmCacheService.evictUserFarms(farm.getUserId());
@@ -76,6 +79,7 @@ public class FarmServiceImpl extends ServiceImpl<FarmMapper, Farm> implements IF
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public FarmVO update(Long id, FarmDTO dto) {
         Farm farm = getById(id);
         if (farm == null) {
@@ -90,20 +94,32 @@ public class FarmServiceImpl extends ServiceImpl<FarmMapper, Farm> implements IF
         if (dto.getUserId() != null) {
             affectedUsers.add(dto.getUserId());
         }
+        Long previousOwner = farm.getUserId();
         BeanUtils.copyProperties(dto, farm);
+        if (farm.getUserId() == null) farm.setUserId(previousOwner);
         farm.setId(id);
         // 🌟 数据隔离：FARMER 不能将养殖场转让给其他用户
         if (SecurityUtils.isFarmer()) {
             farm.setUserId(SecurityUtils.getCurrentUserId());
         }
+        requireOwner(farm.getUserId());
         updateById(farm);
         affectedUsers.forEach(userFarmCacheService::evictUserFarms);
         return toVO(farm);
     }
 
+    private void requireOwner(Long userId) {
+        if (userId == null || userMapper.selectForUpdate(userId) == null) {
+            throw new BusinessException(404, "养殖场所属账号不存在");
+        }
+    }
+
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public void batchDelete(List<Long> ids) {
-        List<Farm> farms = listByIds(ids);
+        if (ids == null || ids.isEmpty()) throw new BusinessException(400, "请选择养殖场");
+        List<Farm> farms = ids.stream().distinct().sorted().map(baseMapper::selectIncludingDeletedForUpdate)
+                .filter(Objects::nonNull).toList();
         // 🌟 数据隔离：FARMER 只能删除自己的养殖场
         if (SecurityUtils.isFarmer()) {
             Long currentUserId = SecurityUtils.getCurrentUserId();
@@ -117,41 +133,33 @@ public class FarmServiceImpl extends ServiceImpl<FarmMapper, Farm> implements IF
                 .map(Farm::getUserId)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
-        // 级联软删除关联的池塘
-        pondService.batchDeleteByFarmIds(ids);
+        // 仅对本次仍有效且已验证归属的农场级联，重复删除不能改写恢复标记。
+        List<Long> activeIds = farms.stream().filter(f -> !Integer.valueOf(1).equals(f.getIsDeleted()))
+                .map(Farm::getId).toList();
+        if (activeIds.isEmpty()) return;
+        String deleteBatch = java.util.UUID.randomUUID().toString();
+        baseMapper.update(null, new LambdaUpdateWrapper<Farm>().in(Farm::getId, activeIds).set(Farm::getDeleteBatch, deleteBatch));
+        pondService.batchDeleteByFarmIds(activeIds, deleteBatch);
         // 软删除养殖场（@TableLogic 自动将 DELETE 转为 UPDATE is_deleted=1）
-        removeByIds(ids);
+        removeByIds(activeIds);
         affectedUsers.forEach(userFarmCacheService::evictUserFarms);
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public void restore(List<Long> ids) {
-        List<Farm> farms = listByIds(ids);
-
-        // 🌟 数据隔离：FARMER 只能恢复自己的养殖场
-        if (SecurityUtils.isFarmer()) {
-            Long currentUserId = SecurityUtils.getCurrentUserId();
-            for (Farm farm : farms) {
-                if (!Objects.equals(farm.getUserId(), currentUserId)) {
-                    throw new BusinessException(403, "无权恢复养殖场 ID=" + farm.getId());
-                }
-            }
+        if (ids == null || ids.isEmpty()) throw new BusinessException(400, "请选择养殖场");
+        List<Farm> farms = ids.stream().distinct().sorted().map(baseMapper::selectIncludingDeletedForUpdate).toList();
+        for (Farm farm : farms) {
+            if (farm == null) throw new BusinessException(404, "养殖场不存在");
+            checkFarmOwnership(farm);
         }
-
-        // 恢复养殖场：直接用 LambdaUpdateWrapper 更新 is_deleted=0
-        LambdaUpdateWrapper<Farm> farmUw = new LambdaUpdateWrapper<>();
-        farmUw.in(Farm::getId, ids).set(Farm::getIsDeleted, 0);
-        baseMapper.update(null, farmUw);
-
-        // 级联恢复关联的池塘
-        pondService.restoreByFarmIds(ids);
-
-        // 恢复后刷新相关用户的缓存
-        Set<Long> affectedUsers = farms.stream()
-                .map(Farm::getUserId)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toSet());
-        affectedUsers.forEach(userFarmCacheService::evictUserFarms);
+        for (Farm farm : farms) {
+            if (!Integer.valueOf(1).equals(farm.getIsDeleted())) continue;
+            baseMapper.restoreDeleted(farm.getId());
+            pondService.restoreByFarmIds(List.of(farm.getId()), farm.getDeleteBatch());
+            if (farm.getUserId() != null) userFarmCacheService.evictUserFarms(farm.getUserId());
+        }
     }
 
     /**

@@ -43,10 +43,10 @@ public class RegistrationController {
         return Result.success(data);
     }
 
-    @Operation(summary = "查询入驻申请状态（按手机号查询）")
-    @GetMapping("/auth/registration-status")
-    public Result<RegistrationApplicationVO> queryStatus(@RequestParam String phone) {
-        RegistrationApplicationVO vo = registrationApplicationService.queryStatusByPhone(phone);
+    @Operation(summary = "验证手机号和申请密码后查询入驻状态")
+    @PostMapping("/auth/registration-status")
+    public Result<RegistrationApplicationVO> queryStatus(@Valid @RequestBody com.Zx1nggg.FAMS.modules.system.dto.LoginReqDTO dto) {
+        RegistrationApplicationVO vo = registrationApplicationService.queryStatusByPhone(dto.getPhone(), dto.getPassword());
         return Result.success(vo);
     }
 

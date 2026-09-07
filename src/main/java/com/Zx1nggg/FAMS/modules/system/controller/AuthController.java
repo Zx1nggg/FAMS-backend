@@ -31,6 +31,9 @@ public class AuthController {
     @Autowired
     private JwtUtils jwtUtils;
 
+    @org.springframework.beans.factory.annotation.Value("${app.cookie.secure:false}")
+    private boolean secureCookie;
+
     @Autowired
     private TokenBlacklistService tokenBlacklistService;
 
@@ -63,9 +66,9 @@ public class AuthController {
 
     @PostMapping("/login")
     // 必须加上 HttpServletResponse 参数，用来往浏览器写 Cookie
-    public Result<Map<String, Object>> login(@RequestBody Map<String, String> loginForm, HttpServletResponse response) {
-        String phone = loginForm.get("phone");
-        String password = loginForm.get("password");
+    public Result<Map<String, Object>> login(@jakarta.validation.Valid @RequestBody com.Zx1nggg.FAMS.modules.system.dto.LoginReqDTO loginForm, HttpServletResponse response) {
+        String phone = loginForm.getPhone();
+        String password = loginForm.getPassword();
 
         // 1. 自动进行身份验证 (底层调 UserDetailsService 和 PasswordEncoder)
         UsernamePasswordAuthenticationToken authenticationToken =
@@ -74,23 +77,8 @@ public class AuthController {
         Authentication authentication;
         try {
             authentication = authenticationManager.authenticate(authenticationToken);
-        } catch (Exception e) {
-            // 登录失败时，检查是否有入驻申请记录，提供更友好的提示
-            RegistrationApplication app = registrationApplicationMapper.selectOne(
-                    new LambdaQueryWrapper<RegistrationApplication>()
-                            .eq(RegistrationApplication::getPhone, phone)
-                            .orderByDesc(RegistrationApplication::getCreatedAt)
-                            .last("LIMIT 1"));
-            if (app != null) {
-                if (app.getStatus() == 0) {
-                    return Result.error(400, "您的入驻申请正在审核中，请耐心等待管理员审批");
-                } else if (app.getStatus() == 2) {
-                    String reason = app.getReviewComment() != null && !app.getReviewComment().isEmpty()
-                            ? "，拒绝原因：" + app.getReviewComment() : "";
-                    return Result.error(400, "您的入驻申请已被拒绝" + reason + "。请重新提交入驻申请");
-                }
-            }
-            return Result.error(400, "手机号或密码错误");
+        } catch (org.springframework.security.core.AuthenticationException e) {
+            return Result.error(401, "手机号或密码错误，或账号不可用");
         }
 
         // 2. 认证通过后，获取封装的 LoginUser
@@ -101,7 +89,8 @@ public class AuthController {
                 loginUser.getUser().getId(),
                 loginUser.getUser().getPhone(),
                 loginUser.getUser().getUserType(),
-                loginUser.getUser().getFarmId() // 传入农场ID
+                loginUser.getUser().getFarmId(),
+                loginUser.getUser().getAuthVersion()
         );
 
         // 4. 将用户的农场权限列表缓存到 Redis（FARMER 专属）
@@ -112,6 +101,8 @@ public class AuthController {
         // 5. 将 Token 写入 HttpOnly Cookie
         Cookie cookie = new Cookie("aqua_token", token);
         cookie.setHttpOnly(true); // 绝对禁止 JavaScript 读取！防 XSS
+        cookie.setAttribute("SameSite", "Lax");
+        cookie.setSecure(secureCookie);
         cookie.setPath("/");      // 整个系统路径有效
         cookie.setMaxAge(24 * 60 * 60); // 设置 Cookie 过期时间为 24 小时
         response.addCookie(cookie);
@@ -144,6 +135,8 @@ public class AuthController {
         // 2. 销毁 Cookie
         Cookie cookie = new Cookie("aqua_token", null);
         cookie.setHttpOnly(true);
+        cookie.setAttribute("SameSite", "Lax");
+        cookie.setSecure(secureCookie);
         cookie.setPath("/");
         cookie.setMaxAge(0); // 立即销毁
         response.addCookie(cookie);

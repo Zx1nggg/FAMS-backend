@@ -29,7 +29,11 @@ public final class SecurityUtils {
     public static Long getCurrentFarmId() {
         ServletRequestAttributes attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
         if (attrs == null) return null;
-        return (Long) attrs.getRequest().getAttribute(KEY_FARM_ID);
+        Long farmId = (Long) attrs.getRequest().getAttribute(KEY_FARM_ID);
+        if (farmId == null && isFarmer()) {
+            throw new com.Zx1nggg.FAMS.common.exception.BusinessException(400, "请先选择养殖场");
+        }
+        return farmId;
     }
 
     public static String getCurrentUserType() {

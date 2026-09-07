@@ -67,6 +67,13 @@ public class IotSensorDataServiceImpl
 
     @Override
     public List<IotSensorDataVO> getLatestByFarmId(Long farmId) {
+        if (com.Zx1nggg.FAMS.security.util.SecurityUtils.isFarmer()
+                && !Objects.equals(farmId, com.Zx1nggg.FAMS.security.util.SecurityUtils.getCurrentFarmId())) {
+            throw new com.Zx1nggg.FAMS.common.exception.BusinessException(403, "无权访问其他养殖场的数据");
+        }
+        List<Pond> ponds = pondMapper.selectList(new LambdaQueryWrapper<Pond>().eq(Pond::getFarmId, farmId));
+        Set<Long> activePondIds = ponds.stream().map(Pond::getId).collect(Collectors.toSet());
+        if (activePondIds.isEmpty()) return List.of();
         // 1. 先查 Redis 聚合缓存
         String farmKey = REDIS_LATEST_FARM_PREFIX + farmId;
         Map<Object, Object> farmCache = redisTemplate.opsForHash().entries(farmKey);
@@ -74,14 +81,11 @@ public class IotSensorDataServiceImpl
             return farmCache.values().stream()
                     .map(v -> parseJson((String) v, IotSensorDataVO.class))
                     .filter(Objects::nonNull)
+                    .filter(vo -> activePondIds.contains(vo.getPondId()))
                     .collect(Collectors.toList());
         }
 
         // 2. Redis miss → 批量查各塘最新（最多一次 MySQL）
-        List<Pond> ponds = pondMapper.selectList(
-                new LambdaQueryWrapper<Pond>()
-                        .eq(Pond::getFarmId, farmId)
-                        .eq(Pond::getIsDeleted, 0));
         List<IotSensorDataVO> result = new ArrayList<>();
 
         for (Pond pond : ponds) {
@@ -139,10 +143,15 @@ public class IotSensorDataServiceImpl
 
     private Pond getActivePond(Long pondId) {
         if (pondId == null) return null;
-        return pondMapper.selectOne(new LambdaQueryWrapper<Pond>()
+        Pond pond = pondMapper.selectOne(new LambdaQueryWrapper<Pond>()
                 .eq(Pond::getId, pondId)
                 .eq(Pond::getIsDeleted, 0)
                 .last("LIMIT 1"));
+        if (pond != null && com.Zx1nggg.FAMS.security.util.SecurityUtils.isFarmer()
+                && !Objects.equals(pond.getFarmId(), com.Zx1nggg.FAMS.security.util.SecurityUtils.getCurrentFarmId())) {
+            throw new com.Zx1nggg.FAMS.common.exception.BusinessException(403, "无权访问其他养殖场的数据");
+        }
+        return pond;
     }
 
     private void cleanupPondCache(Long pondId, Long farmId) {

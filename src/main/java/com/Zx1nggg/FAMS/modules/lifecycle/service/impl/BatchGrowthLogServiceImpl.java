@@ -48,6 +48,9 @@ public class BatchGrowthLogServiceImpl extends ServiceImpl<BatchGrowthLogMapper,
     @Resource
     private SeedlingDictMapper seedlingDictMapper;
 
+    @Resource
+    private com.Zx1nggg.FAMS.modules.lifecycle.service.LifecycleAccessService lifecycleAccess;
+
     @Override
     public Page<BatchGrowthLogVO> pageQuery(Integer pageNum, Integer pageSize,
                                             String batchNo, Long pondId, Long farmId,
@@ -100,7 +103,10 @@ public class BatchGrowthLogServiceImpl extends ServiceImpl<BatchGrowthLogMapper,
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public BatchGrowthLogVO create(BatchGrowthLogDTO dto) {
+        lifecycleAccess.requireBatchForPond(dto.getBatchNo(), dto.getPondId(), true);
+        lifecycleAccess.requirePatrol(dto.getPatrolLogId(), dto.getPondId(), dto.getBatchNo());
         // 🌟 数据隔离：FARMER 只能在本农场池塘创建记录
         checkFarmAccessByPondId(dto.getPondId());
         BatchGrowthLog log = new BatchGrowthLog();
@@ -110,12 +116,16 @@ public class BatchGrowthLogServiceImpl extends ServiceImpl<BatchGrowthLogMapper,
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public BatchGrowthLogVO update(Long id, BatchGrowthLogDTO dto) {
         BatchGrowthLog log = getById(id);
         if (log == null) return null;
         // 🌟 数据隔离
         checkFarmAccessByPondId(log.getPondId());
         checkFarmAccessByPondId(dto.getPondId());
+        lifecycleAccess.requireBatchForPond(log.getBatchNo(), log.getPondId(), true);
+        lifecycleAccess.requireBatchForPond(dto.getBatchNo(), dto.getPondId(), true);
+        lifecycleAccess.requirePatrol(dto.getPatrolLogId(), dto.getPondId(), dto.getBatchNo());
         BeanUtils.copyProperties(dto, log);
         log.setId(id);
         updateById(log);
@@ -123,19 +133,17 @@ public class BatchGrowthLogServiceImpl extends ServiceImpl<BatchGrowthLogMapper,
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public void batchDelete(List<Long> ids) {
-        // 🌟 数据隔离：FARMER 只能删除本农场记录
-        if (SecurityUtils.isFarmer()) {
-            List<BatchGrowthLog> logs = listByIds(ids);
-            for (BatchGrowthLog log : logs) {
-                checkFarmAccessByPondId(log.getPondId());
-            }
+        for (BatchGrowthLog log : listByIds(ids)) {
+            lifecycleAccess.requireBatchForPond(log.getBatchNo(), log.getPondId(), true);
         }
         removeByIds(ids);
     }
 
     @Override
     public GrowthChartVO getGrowthChart(String batchNo, Long pondId) {
+        lifecycleAccess.requireBatchForPond(batchNo, pondId, false);
         // 1. 查批次信息
         PurchaseBatch batch = purchaseBatchMapper.selectOne(
                 new LambdaQueryWrapper<PurchaseBatch>().eq(PurchaseBatch::getBatchNo, batchNo));
@@ -153,13 +161,12 @@ public class BatchGrowthLogServiceImpl extends ServiceImpl<BatchGrowthLogMapper,
         }
 
         // 3. 查投放记录（获取初始尾数和投放日期）
-        Stocking stocking = stockingMapper.selectOne(
+        List<Stocking> stockings = stockingMapper.selectList(
                 new LambdaQueryWrapper<Stocking>()
                         .eq(Stocking::getBatchId, batch.getId())
                         .eq(Stocking::getPondId, pondId));
-        Integer initialQty = (stocking != null && stocking.getStockedQty() != null)
-                ? stocking.getStockedQty() : 0;
-        LocalDate stockingDate = (stocking != null) ? stocking.getStockingDate() : null;
+        Integer initialQty = stockings.stream().map(Stocking::getStockedQty).filter(Objects::nonNull).mapToInt(Integer::intValue).sum();
+        LocalDate stockingDate = stockings.stream().map(Stocking::getStockingDate).filter(Objects::nonNull).min(LocalDate::compareTo).orElse(null);
 
         // 4. 查该批次+池塘所有生长记录，按日期升序
         List<BatchGrowthLog> logs = list(new LambdaQueryWrapper<BatchGrowthLog>()
@@ -261,7 +268,7 @@ public class BatchGrowthLogServiceImpl extends ServiceImpl<BatchGrowthLogMapper,
      * 🌟 数据隔离：校验 FARMER 是否有权操作该池塘所属农场
      */
     private void checkFarmAccessByPondId(Long pondId) {
-        if (pondId == null) return;
+        if (pondId == null) throw new BusinessException(400, "池塘不能为空");
         if (SecurityUtils.isFarmer()) {
             Pond pond = pondMapper.selectById(pondId);
             if (pond == null || !Objects.equals(pond.getFarmId(), SecurityUtils.getCurrentFarmId())) {

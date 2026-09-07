@@ -66,8 +66,14 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public void batchDelete(List<Long> ids) {
         assertCanManage();
+        if (ids == null || ids.isEmpty()) throw new BusinessException(400, "请选择供应商");
+        ids.stream().distinct().sorted().forEach(baseMapper::selectForUpdate);
+        for (Long id : ids) {
+            if (baseMapper.countReferences(id) > 0) throw new BusinessException(400, "供应商被采购记录引用，不能删除");
+        }
         removeByIds(ids);
     }
 

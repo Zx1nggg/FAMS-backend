@@ -50,6 +50,8 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
     @Resource
     private PondFeedLogMapper pondFeedLogMapper;
 
+    @Resource private com.Zx1nggg.FAMS.modules.lifecycle.mapper.PatrolLogMapper patrolLogMapper;
+
     // ==================== 分页查询 ====================
 
     @Override
@@ -98,10 +100,10 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
     // ==================== 创建出塘结算 ====================
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public HarvestRecordVO create(HarvestRecordDTO dto) {
         // 1. 校验批次存在且状态为"养殖中"
-        PurchaseBatch batch = purchaseBatchMapper.selectOne(
-                new LambdaQueryWrapper<PurchaseBatch>().eq(PurchaseBatch::getBatchNo, dto.getBatchNo()));
+        PurchaseBatch batch = purchaseBatchMapper.selectByBatchNoForUpdate(dto.getBatchNo());
         if (batch == null) {
             throw new BusinessException(404, "批次不存在");
         }
@@ -109,17 +111,15 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
             throw new BusinessException(400, "该批次当前状态不允许出塘结算（仅养殖中的批次可出塘）");
         }
 
-        // 2. 校验一批次只能出塘一次（同 batch_no 且未删除的记录）
-        Long existCount = baseMapper.selectCount(
-                new LambdaQueryWrapper<HarvestRecord>().eq(HarvestRecord::getBatchNo, dto.getBatchNo()));
-        if (existCount > 0) {
-            throw new BusinessException(400, "该批次已出塘结算，不可重复出塘");
-        }
+        checkFarmAccess(batch.getFarmId());
 
-        // 2.1 物理删除该 batch_no 下已被软删除的历史记录，释放 UNIQUE 约束
-        // 场景：用户删除出塘记录后批次状态恢复为"养殖中"，再次出塘同一批次时，
-        // 软删除记录的 batch_no 仍占用数据库唯一键导致 INSERT 冲突，此处做物理清除。
-        baseMapper.physicalDeleteSoftDeletedByBatchNo(dto.getBatchNo());
+        // 同批次、同池塘只能有一条有效出塘记录
+        Long existCount = baseMapper.selectCount(
+                new LambdaQueryWrapper<HarvestRecord>().eq(HarvestRecord::getBatchNo, dto.getBatchNo())
+                        .eq(HarvestRecord::getPondId, dto.getPondId()));
+        if (existCount > 0) {
+            throw new BusinessException(400, "该批次在所选池塘已出塘，不可重复出塘");
+        }
 
         // 3. 校验池塘存在且与批次同养殖场
         Pond pond = pondMapper.selectById(dto.getPondId());
@@ -142,6 +142,8 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
         // 5. FARMER 权限校验
         checkFarmAccess(batch.getFarmId());
 
+        validateHarvestDate(dto, batch);
+
         // 6. 构建实体
         HarvestRecord record = new HarvestRecord();
         BeanUtils.copyProperties(dto, record);
@@ -151,6 +153,7 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
         fillCostDefaults(dto, batch, pond);
 
         // 8. 自动计算金额
+        copyCostDetails(record, dto);
         calculateAmounts(record, dto);
 
         // 9. 自动生成溯源二维码 URL（预留）
@@ -160,8 +163,7 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
         save(record);
 
         // 10. 批次状态流转：养殖中 → 已出库结算
-        batch.setBatchStatus((byte) 3);
-        purchaseBatchMapper.updateById(batch);
+        refreshBatchStatus(batch);
 
         return toVO(record);
     }
@@ -169,12 +171,20 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
     // ==================== 更新 ====================
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public HarvestRecordVO update(Long id, HarvestRecordDTO dto) {
         HarvestRecord record = getById(id);
         if (record == null) {
             throw new BusinessException(404, "出塘记录不存在");
         }
         checkFarmAccess(record);
+
+        PurchaseBatch lockedBatch = purchaseBatchMapper.selectByBatchNoForUpdate(record.getBatchNo());
+        if (lockedBatch == null) throw new BusinessException(404, "批次不存在");
+        if (!Objects.equals(record.getPondId(), dto.getPondId())) {
+            throw new BusinessException(400, "出塘记录不可变更池塘");
+        }
+        validateHarvestDate(dto, lockedBatch);
 
         // 批次号不可修改
         if (!record.getBatchNo().equals(dto.getBatchNo())) {
@@ -202,15 +212,18 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
         fillCostDefaults(dto, batch, pond);
 
         // 重新计算金额
+        copyCostDetails(record, dto);
         calculateAmounts(record, dto);
 
         updateById(record);
+        refreshBatchStatus(lockedBatch);
         return toVO(record);
     }
 
     // ==================== 批量软删除 ====================
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public void batchDelete(List<Long> ids) {
         List<HarvestRecord> records = listByIds(ids);
         if (records.isEmpty()) {
@@ -222,24 +235,22 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
             checkFarmAccess(record);
         }
 
+        Map<String, PurchaseBatch> lockedBatches = new TreeMap<>();
+        records.stream().map(HarvestRecord::getBatchNo).distinct().sorted().forEach(batchNo -> {
+            PurchaseBatch batch = purchaseBatchMapper.selectByBatchNoForUpdate(batchNo);
+            if (batch == null) throw new BusinessException(404, "关联批次不存在");
+            lockedBatches.put(batchNo, batch);
+        });
         // MyBatis-Plus @TableLogic：removeByIds 自动转为 UPDATE is_deleted=1
         removeByIds(ids);
 
-        // 恢复批次状态 3→2，允许重新出塘
-        for (HarvestRecord record : records) {
-            PurchaseBatch batch = purchaseBatchMapper.selectOne(
-                    new LambdaQueryWrapper<PurchaseBatch>().eq(PurchaseBatch::getBatchNo, record.getBatchNo()));
-            if (batch != null && batch.getBatchStatus() != null && batch.getBatchStatus() == 3) {
-                batch.setBatchStatus((byte) 2);
-                purchaseBatchMapper.updateById(batch);
-            }
-        }
+        lockedBatches.values().forEach(this::refreshBatchStatus);
     }
 
     // ==================== 结算预览 ====================
 
     @Override
-    public Map<String, Object> preview(Long batchId) {
+    public Map<String, Object> preview(Long batchId, Long pondId) {
         PurchaseBatch batch = purchaseBatchMapper.selectById(batchId);
         if (batch == null) {
             throw new BusinessException(404, "批次不存在");
@@ -247,6 +258,10 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
         // FARMER 校验
         checkFarmAccess(batch.getFarmId());
 
+        Pond selectedPond = pondMapper.selectById(pondId);
+        if (selectedPond == null || !Objects.equals(selectedPond.getFarmId(), batch.getFarmId())) {
+            throw new BusinessException(400, "请选择本批次投放的池塘");
+        }
         Map<String, Object> result = new LinkedHashMap<>();
 
         // 批次基本信息
@@ -269,11 +284,13 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
         }
 
         // 苗种成本（采购批次总金额）
-        result.put("seedlingCost", batch.getTotalAmount());
+        result.put("seedlingCost", seedlingCost(batch, pondId));
 
         // 投放信息
         List<Stocking> stockings = stockingMapper.selectList(
-                new LambdaQueryWrapper<Stocking>().eq(Stocking::getBatchId, batchId));
+                new LambdaQueryWrapper<Stocking>().eq(Stocking::getBatchId, batchId)
+                        .eq(Stocking::getPondId, pondId).orderByAsc(Stocking::getStockingDate));
+        if (stockings.isEmpty()) throw new BusinessException(400, "该批次未投放在所选池塘");
         if (!stockings.isEmpty()) {
             Stocking firstStocking = stockings.get(0);
             result.put("stockingDate", firstStocking.getStockingDate());
@@ -299,10 +316,7 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
 
                 // 饲料投喂汇总
                 if (stockingDate != null) {
-                    List<PondFeedLog> feedLogs = pondFeedLogMapper.selectList(
-                            new LambdaQueryWrapper<PondFeedLog>()
-                                    .eq(PondFeedLog::getPondId, pond.getId())
-                                    .ge(PondFeedLog::getLogDate, stockingDate));
+                    List<PondFeedLog> feedLogs = batchFeedLogs(batch, pond.getId(), stockingDate, LocalDate.now());
                     BigDecimal totalFeed = feedLogs.stream()
                             .map(f -> f.getFeedAmount() != null ? f.getFeedAmount() : BigDecimal.ZERO)
                             .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -327,6 +341,7 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
         BatchGrowthLog latestGrowth = batchGrowthLogMapper.selectOne(
                 new LambdaQueryWrapper<BatchGrowthLog>()
                         .eq(BatchGrowthLog::getBatchNo, batch.getBatchNo())
+                        .eq(BatchGrowthLog::getPondId, pondId)
                         .orderByDesc(BatchGrowthLog::getLogDate)
                         .last("LIMIT 1"));
         if (latestGrowth != null) {
@@ -337,7 +352,8 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
 
         // 累计死亡统计
         List<BatchGrowthLog> allGrowthLogs = batchGrowthLogMapper.selectList(
-                new LambdaQueryWrapper<BatchGrowthLog>().eq(BatchGrowthLog::getBatchNo, batch.getBatchNo()));
+                new LambdaQueryWrapper<BatchGrowthLog>().eq(BatchGrowthLog::getBatchNo, batch.getBatchNo())
+                        .eq(BatchGrowthLog::getPondId, pondId));
         int totalRoutineDeath = allGrowthLogs.stream()
                 .mapToInt(g -> g.getRoutineDeathCount() != null ? g.getRoutineDeathCount() : 0).sum();
         int totalAbnormalDeath = allGrowthLogs.stream()
@@ -350,14 +366,14 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
         // 存活率 & 预估产量
         Integer stockedQty = (Integer) result.get("totalStockedQty");
         if (stockedQty != null && stockedQty > 0) {
-            BigDecimal survivalRate = BigDecimal.valueOf(100L * (stockedQty - totalDeath) / stockedQty)
-                    .setScale(1, RoundingMode.HALF_UP);
+            BigDecimal survivalRate = BigDecimal.valueOf(100L * Math.max(0, stockedQty - totalDeath))
+                    .divide(BigDecimal.valueOf(stockedQty), 1, RoundingMode.HALF_UP);
             result.put("survivalRate", survivalRate);
 
             BigDecimal avgWeight = latestGrowth != null && latestGrowth.getAvgWeight() != null
                     ? latestGrowth.getAvgWeight() : BigDecimal.ZERO;
             // 预估产量(kg) = 存活尾数 × 均重(g) / 1000
-            BigDecimal predictedKg = BigDecimal.valueOf(stockedQty - totalDeath)
+            BigDecimal predictedKg = BigDecimal.valueOf(Math.max(0, stockedQty - totalDeath))
                     .multiply(avgWeight)
                     .divide(BigDecimal.valueOf(1000), 2, RoundingMode.HALF_UP);
             result.put("predictedYieldKg", predictedKg);
@@ -375,7 +391,7 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
     private void fillCostDefaults(HarvestRecordDTO dto, PurchaseBatch batch, Pond pond) {
         // 苗种成本：取采购批次总金额
         if (dto.getSeedlingCost() == null && batch.getTotalAmount() != null) {
-            dto.setSeedlingCost(batch.getTotalAmount());
+            dto.setSeedlingCost(seedlingCost(batch, pond.getId()));
         }
 
         // 饲料成本 & 药品成本：从投喂日志汇总
@@ -391,12 +407,7 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
                     .min(LocalDate::compareTo)
                     .orElse(null);
 
-            LambdaQueryWrapper<PondFeedLog> wrapper = new LambdaQueryWrapper<>();
-            wrapper.eq(PondFeedLog::getPondId, pond.getId());
-            if (stockingDate != null) {
-                wrapper.ge(PondFeedLog::getLogDate, stockingDate);
-            }
-            List<PondFeedLog> feedLogs = pondFeedLogMapper.selectList(wrapper);
+            List<PondFeedLog> feedLogs = batchFeedLogs(batch, pond.getId(), stockingDate, dto.getHarvestDate());
 
             if (dto.getFeedCost() == null) {
                 BigDecimal feedCost = feedLogs.stream()
@@ -435,7 +446,7 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
         BigDecimal other = nvl(dto.getOtherCost());
         BigDecimal totalCost = seedling.add(feed).add(medicine).add(other);
 
-        if (totalCost.compareTo(BigDecimal.ZERO) > 0) {
+        if (dto.getSeedlingCost() != null || dto.getFeedCost() != null || dto.getMedicineCost() != null || dto.getOtherCost() != null) {
             record.setTotalCost(totalCost.setScale(2, RoundingMode.HALF_UP));
         } else {
             record.setTotalCost(null);
@@ -457,6 +468,57 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
                     && (dto.getSeedlingCost() != null || dto.getFeedCost() != null
                         || dto.getMedicineCost() != null || dto.getOtherCost() != null);
             record.setSettlementStatus(settled ? 1 : 0);
+        }
+    }
+
+
+
+    /** 仅自动计入能够通过巡塘记录明确归属该批次的费用，避免混养时重复计费。 */
+    private List<PondFeedLog> batchFeedLogs(PurchaseBatch batch, Long pondId, LocalDate from, LocalDate to) {
+        List<Long> patrolIds = patrolLogMapper.selectList(new LambdaQueryWrapper<com.Zx1nggg.FAMS.modules.lifecycle.entity.PatrolLog>()
+                .eq(com.Zx1nggg.FAMS.modules.lifecycle.entity.PatrolLog::getBatchNo, batch.getBatchNo())
+                .eq(com.Zx1nggg.FAMS.modules.lifecycle.entity.PatrolLog::getPondId, pondId))
+                .stream().map(com.Zx1nggg.FAMS.modules.lifecycle.entity.PatrolLog::getId).toList();
+        if (patrolIds.isEmpty()) return List.of();
+        var wrapper = new LambdaQueryWrapper<PondFeedLog>().eq(PondFeedLog::getPondId, pondId)
+                .in(PondFeedLog::getPatrolLogId, patrolIds);
+        if (from != null) wrapper.ge(PondFeedLog::getLogDate, from);
+        if (to != null) wrapper.le(PondFeedLog::getLogDate, to);
+        return pondFeedLogMapper.selectList(wrapper);
+    }
+
+    private void refreshBatchStatus(PurchaseBatch batch) {
+        Set<Long> stockedPonds = new HashSet<>();
+        stockingMapper.selectList(new LambdaQueryWrapper<Stocking>().eq(Stocking::getBatchId, batch.getId()))
+                .forEach(s -> stockedPonds.add(s.getPondId()));
+        Set<Long> harvestedPonds = new HashSet<>();
+        baseMapper.selectList(new LambdaQueryWrapper<HarvestRecord>().eq(HarvestRecord::getBatchNo, batch.getBatchNo()))
+                .forEach(h -> harvestedPonds.add(h.getPondId()));
+        batch.setBatchStatus((byte) (!stockedPonds.isEmpty() && harvestedPonds.containsAll(stockedPonds) ? 3 : 2));
+        purchaseBatchMapper.updateById(batch);
+    }
+
+    private BigDecimal seedlingCost(PurchaseBatch batch, Long pondId) {
+        if (batch.getTotalAmount() == null || batch.getUnitQty() == null || batch.getUnitQty() <= 0) return null;
+        long units = stockingMapper.selectList(new LambdaQueryWrapper<Stocking>()
+                .eq(Stocking::getBatchId, batch.getId()).eq(Stocking::getPondId, pondId))
+                .stream().mapToLong(s -> s.getStockedUnits() == null ? 0 : s.getStockedUnits()).sum();
+        return batch.getTotalAmount().multiply(BigDecimal.valueOf(units))
+                .divide(BigDecimal.valueOf(batch.getUnitQty()), 2, RoundingMode.HALF_UP);
+    }
+
+    private void copyCostDetails(HarvestRecord record, HarvestRecordDTO dto) {
+        record.setSeedlingCost(dto.getSeedlingCost()); record.setFeedCost(dto.getFeedCost());
+        record.setMedicineCost(dto.getMedicineCost()); record.setOtherCost(dto.getOtherCost());
+    }
+
+    private void validateHarvestDate(HarvestRecordDTO dto, PurchaseBatch batch) {
+        List<Stocking> stockings = stockingMapper.selectList(new LambdaQueryWrapper<Stocking>()
+                .eq(Stocking::getBatchId, batch.getId()).eq(Stocking::getPondId, dto.getPondId()));
+        if (stockings.isEmpty()) throw new BusinessException(400, "该批次未投放在所选池塘");
+        if (dto.getHarvestDate() == null || stockings.stream().anyMatch(s -> s.getStockingDate() != null
+                && dto.getHarvestDate().isBefore(s.getStockingDate()))) {
+            throw new BusinessException(400, "出塘日期不能早于投放日期");
         }
     }
 
@@ -506,11 +568,11 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
                 List<Stocking> stockings = stockingMapper.selectList(
                         new LambdaQueryWrapper<Stocking>()
                                 .eq(Stocking::getBatchId, batch.getId())
-                                .orderByAsc(Stocking::getStockingDate)
-                                .last("LIMIT 1"));
+                                .eq(Stocking::getPondId, record.getPondId())
+                                .orderByAsc(Stocking::getStockingDate));
                 if (!stockings.isEmpty()) {
                     Stocking firstStocking = stockings.get(0);
-                    vo.setStockedQty(firstStocking.getStockedQty());
+                    vo.setStockedQty(stockings.stream().map(Stocking::getStockedQty).filter(Objects::nonNull).mapToInt(Integer::intValue).sum());
                     vo.setStockingDate(firstStocking.getStockingDate());
                 }
             }
@@ -532,11 +594,11 @@ public class HarvestRecordServiceImpl extends ServiceImpl<HarvestRecordMapper, H
      * 通过池塘 → 农场链路校验归属
      */
     private void checkFarmAccess(HarvestRecord record) {
-        if (SecurityUtils.isFarmer() && record.getPondId() != null) {
+        if (SecurityUtils.isFarmer()) {
+            if (record.getPondId() == null) throw new BusinessException(403, "出塘记录缺少池塘归属");
             Pond pond = pondMapper.selectById(record.getPondId());
-            if (pond != null) {
-                checkFarmAccess(pond.getFarmId());
-            }
+            if (pond == null) throw new BusinessException(403, "池塘不存在或已删除");
+            checkFarmAccess(pond.getFarmId());
         }
     }
 

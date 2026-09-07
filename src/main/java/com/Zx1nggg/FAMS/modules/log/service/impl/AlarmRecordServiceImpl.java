@@ -127,7 +127,16 @@ public class AlarmRecordServiceImpl extends ServiceImpl<AlarmRecordMapper, Alarm
             alarm.setRecoveredAt(null);
         }
         alarm.setStatus(target);
-        updateById(alarm);
+        var update = new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<AlarmRecord>()
+                .eq(AlarmRecord::getId, id).eq(AlarmRecord::getStatus, current);
+        if (target == PENDING) {
+            update.set(AlarmRecord::getAcknowledgedBy, null).set(AlarmRecord::getAcknowledgedAt, null)
+                    .set(AlarmRecord::getResolvedBy, null).set(AlarmRecord::getResolvedAt, null)
+                    .set(AlarmRecord::getResolutionRemark, null).set(AlarmRecord::getRecoveredAt, null);
+        }
+        if (baseMapper.update(alarm, update) != 1) {
+            throw new BusinessException(409, "告警状态已变化，请刷新后重试");
+        }
 
         AlarmActionLog action = new AlarmActionLog();
         action.setAlarmId(alarm.getId());
