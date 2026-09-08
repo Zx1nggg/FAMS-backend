@@ -104,6 +104,7 @@ public class SecurityConfig {
                                 "/test/health" //连接测试接口
                         ).permitAll()
                         .requestMatchers("/regulator/**").hasAnyRole("ADMIN", "REGULATOR")
+                        .requestMatchers("/ai/**").hasAnyRole("ADMIN", "REGULATOR", "FARMER")
                         .requestMatchers("/admin/**", "/user/list", "/user/*/status").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/user/**").hasRole("ADMIN")
                         .requestMatchers("/farmer/**", "/lifecycle/trace/**").hasRole("FARMER")

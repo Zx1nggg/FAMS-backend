@@ -41,6 +41,22 @@ mybatis-plus:
 app:
   upload:
     avatar-dir: ${AVATAR_DIR:uploads/avatar}
+  ai:
+    enabled: ${AI_ENABLED:false}
+    provider: ${AI_PROVIDER:openai-responses}
+    base-url: ${AI_BASE_URL:https://api.openai.com/v1}
+    api-key: ${AI_API_KEY:}
+    model: ${AI_MODEL:}
+    max-tool-rounds: ${AI_MAX_TOOL_ROUNDS:6}
+    max-output-tokens: ${AI_MAX_OUTPUT_TOKENS:1600}
+    history-limit: ${AI_HISTORY_LIMIT:16}
+    request-timeout-seconds: ${AI_TIMEOUT_SECONDS:60}
+    per-minute-request-limit: ${AI_PER_MINUTE_REQUEST_LIMIT:10}
+    daily-request-limit: ${AI_DAILY_REQUEST_LIMIT:200}
+    stream-timeout-seconds: ${AI_STREAM_TIMEOUT_SECONDS:120}
+    knowledge-enabled: ${AI_KNOWLEDGE_ENABLED:false}
+    vector-store-id: ${AI_VECTOR_STORE_ID:}
+    knowledge-max-results: ${AI_KNOWLEDGE_MAX_RESULTS:8}
 
 jwt:
   secret: ${JWT_SECRET}
