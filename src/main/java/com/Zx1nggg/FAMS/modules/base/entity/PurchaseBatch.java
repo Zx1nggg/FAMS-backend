@@ -12,6 +12,7 @@ import lombok.ToString;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 /**
  * <p>
@@ -102,6 +103,14 @@ public class PurchaseBatch implements Serializable {
     @Schema(description = "检疫证号")
     @TableField("quarantine_cert_no")
     private String quarantineCertNo;
+
+    /** 执行检疫核验并签发证号的监管人员。 */
+    @TableField("quarantine_reviewer_id")
+    private Long quarantineReviewerId;
+
+    /** 检疫审核通过时间。 */
+    @TableField("quarantine_reviewed_at")
+    private LocalDateTime quarantineReviewedAt;
 
     /**
      * 单价(元/件)

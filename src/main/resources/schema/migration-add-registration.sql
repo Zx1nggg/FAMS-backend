@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS `sys_registration_application` (
   `id`                 BIGINT        NOT NULL AUTO_INCREMENT,
   `username`           VARCHAR(50)   NOT NULL                   COMMENT '前端展示昵称',
   `password`           VARCHAR(100)  NOT NULL                   COMMENT 'BCrypt加密密码',
-  `real_name`          VARCHAR(50)   DEFAULT NULL               COMMENT '历史申请实名（新申请登录后补充）',
+  `real_name`          VARCHAR(50)   NOT NULL                   COMMENT '负责人/法人真实姓名',
   `phone`              VARCHAR(20)   DEFAULT NULL               COMMENT '联系电话',
   `email`              VARCHAR(100)  DEFAULT NULL               COMMENT '电子邮箱',
   `farm_name`          VARCHAR(100)  NOT NULL                   COMMENT '申请入驻的养殖场名称',

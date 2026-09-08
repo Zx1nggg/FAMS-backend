@@ -1,4 +1,4 @@
--- FAMS 当前空库初始化（MySQL 8.0+），2026-09-06
+-- FAMS 当前空库初始化（MySQL 8.0+），2026-09-08
 -- 仅在专门新建的空数据库执行。禁止导入已有业务数据库。
 -- 来源：历史 dump 的纯表结构与仓库增量；不包含用户、密码或业务演示数据。
 
@@ -161,6 +161,8 @@ CREATE TABLE `t_purchase_batch` (
   `estimated_total_qty` int NOT NULL COMMENT '系统换算总尾数 (件数 * 密度)',
   `batch_status` tinyint DEFAULT '0' COMMENT 'Why 状态机: 0-待检疫, 1-已检疫入库, 2-养殖中, 3-已出库结算',
   `quarantine_cert_no` varchar(100) DEFAULT NULL COMMENT '检疫证号',
+  `quarantine_reviewer_id` bigint DEFAULT NULL COMMENT '检疫审核监管人员ID',
+  `quarantine_reviewed_at` datetime DEFAULT NULL COMMENT '检疫审核通过时间',
   `purchase_date` date NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `batch_no` (`batch_no`)
@@ -198,19 +200,25 @@ CREATE TABLE `t_supplier` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='苗种供应商/培育基地档案表';
 
+CREATE TABLE `t_supplier_seedling` (
+  `supplier_id` BIGINT NOT NULL COMMENT '供应商ID',
+  `seedling_id` BIGINT NOT NULL COMMENT '苗种公共目录ID',
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`supplier_id`, `seedling_id`),
+  KEY `idx_supplier_seedling_seedling` (`seedling_id`),
+  CONSTRAINT `fk_supplier_seedling_supplier`
+    FOREIGN KEY (`supplier_id`) REFERENCES `t_supplier` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_supplier_seedling_seedling`
+    FOREIGN KEY (`seedling_id`) REFERENCES `t_seedling_dict` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='供应商经核准可供应的苗种品类';
+
 -- 来源：migration-add-is-deleted.sql
 ALTER TABLE t_farm
     ADD COLUMN is_deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除: 0-正常 1-已删除';
 
 ALTER TABLE t_pond
     ADD COLUMN is_deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除: 0-正常 1-已删除';
-
--- 来源：migration-add-farm-isolation.sql
-ALTER TABLE `t_supplier`
-  ADD COLUMN `user_id` BIGINT DEFAULT NULL COMMENT '所属用户ID（FARMER仅可见自己的供应商）' AFTER `create_time`;
-
-ALTER TABLE `t_seedling_dict`
-  ADD COLUMN `user_id` BIGINT DEFAULT NULL COMMENT '所属用户ID（FARMER仅可见自己的苗种）' AFTER `min_do`;
 
 -- 来源：migration-add-stocking.sql
 CREATE TABLE `t_stocking` (
@@ -286,7 +294,7 @@ CREATE TABLE `sys_registration_application` (
   `id`                 BIGINT        NOT NULL AUTO_INCREMENT,
   `username`           VARCHAR(50)   NOT NULL                   COMMENT '前端展示昵称',
   `password`           VARCHAR(100)  NOT NULL                   COMMENT 'BCrypt加密密码',
-  `real_name`          VARCHAR(50)   DEFAULT NULL               COMMENT '历史申请实名（新申请登录后补充）',
+  `real_name`          VARCHAR(50)   NOT NULL                   COMMENT '负责人/法人真实姓名',
   `phone`              VARCHAR(20)   DEFAULT NULL               COMMENT '联系电话',
   `email`              VARCHAR(100)  DEFAULT NULL               COMMENT '电子邮箱',
   `farm_name`          VARCHAR(100)  NOT NULL                   COMMENT '申请入驻的养殖场名称',

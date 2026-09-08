@@ -39,7 +39,10 @@ class LifecycleIntegrationTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired IHarvestRecordService harvest;
     @Autowired IStockingService stockingService;
+    @Autowired com.Zx1nggg.FAMS.modules.base.service.IPurchaseBatchService purchaseBatchService;
     @Autowired PurchaseBatchMapper batches;
+    @Autowired SupplierMapper suppliers;
+    @Autowired SeedlingDictMapper seedlings;
     @Autowired PondMapper ponds;
     @Autowired StockingMapper stockings;
     @Autowired HarvestRecordMapper harvests;
@@ -131,6 +134,7 @@ class LifecycleIntegrationTest {
         jdbc.execute("CREATE UNIQUE INDEX uk_harvest_batch_pond_active ON t_harvest_record(batch_no, pond_id, active_record)");
         jdbc.execute("ALTER TABLE sys_registration_application ADD COLUMN pending_phone VARCHAR(20) AS (CASE WHEN status=0 THEN phone ELSE NULL END)");
         jdbc.execute("CREATE UNIQUE INDEX uk_registration_pending_phone ON sys_registration_application(pending_phone)");
+        jdbc.execute("CREATE TABLE t_supplier_seedling (supplier_id BIGINT NOT NULL, seedling_id BIGINT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(supplier_id, seedling_id))");
         bindFarmer(10L);
         for (long id : List.of(101L, 102L, 201L)) {
             Pond pond = new Pond(); pond.setId(id); pond.setFarmId(id == 201L ? 20L : 10L); pond.setPondName("test pond"); ponds.insert(pond);
@@ -251,6 +255,49 @@ class LifecycleIntegrationTest {
         bindFarmer(null);
         ((ServletRequestAttributes) RequestContextHolder.getRequestAttributes()).getRequest().setAttribute("currentUserType", "REGULATOR");
     }
+
+    private com.Zx1nggg.FAMS.modules.base.dto.PurchaseBatchDTO purchaseDto(Long supplierId, Long seedlingId) {
+        var dto = new com.Zx1nggg.FAMS.modules.base.dto.PurchaseBatchDTO();
+        dto.setFarmId(10L); dto.setSupplierId(supplierId); dto.setSeedlingId(seedlingId);
+        dto.setPurchaseUnit("袋"); dto.setUnitQty(2); dto.setDensityPerUnit(100);
+        dto.setUnitPrice(new BigDecimal("50")); dto.setPurchaseDate(LocalDate.of(2026, 1, 1));
+        return dto;
+    }
+
+    private void addApprovedOffering(Long supplierId, Long seedlingId) {
+        Supplier supplier = new Supplier(); supplier.setId(supplierId); supplier.setSupplierName("approved supplier"); suppliers.insert(supplier);
+        SeedlingDict seedling = new SeedlingDict(); seedling.setId(seedlingId); seedling.setCategoryName("approved seedling"); seedlings.insert(seedling);
+        suppliers.insertSeedlingOffering(supplierId, seedlingId);
+    }
+
+    @Test void farmerCannotSelfApproveQuarantineAndRegulatorApprovalIsAStateTransition() {
+        addApprovedOffering(11L, 21L);
+        var dto = purchaseDto(11L, 21L);
+        dto.setBatchStatus((byte) 1); dto.setQuarantineCertNo("FORGED-BY-CLIENT");
+        var created = purchaseBatchService.create(dto);
+        assertThat(created.getBatchStatus()).isZero();
+        assertThat(created.getQuarantineCertNo()).isNull();
+        assertThatThrownBy(() -> purchaseBatchService.approveQuarantine(created.getId(), "QC-REAL"))
+                .isInstanceOf(BusinessException.class);
+
+        bindRegulator();
+        var approved = purchaseBatchService.approveQuarantine(created.getId(), " QC-REAL ");
+        assertThat(approved.getBatchStatus()).isEqualTo((byte) 1);
+        assertThat(approved.getQuarantineCertNo()).isEqualTo("QC-REAL");
+        assertThat(approved.getQuarantineReviewerId()).isEqualTo(1L);
+        assertThat(approved.getQuarantineReviewedAt()).isNotNull();
+        assertThatThrownBy(() -> purchaseBatchService.approveQuarantine(created.getId(), "QC-SECOND"))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    @Test void purchaseMustUseASeedlingActuallyOfferedBySupplier() {
+        addApprovedOffering(12L, 22L);
+        SeedlingDict unavailable = new SeedlingDict(); unavailable.setId(23L); unavailable.setCategoryName("not offered"); seedlings.insert(unavailable);
+        assertThatThrownBy(() -> purchaseBatchService.create(purchaseDto(12L, 23L)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("未登记供应");
+        assertThat(purchaseBatchService.create(purchaseDto(12L, 22L)).getSeedlingName()).isEqualTo("approved seedling");
+    }
     @Test void inspectionLifecycleAndValidation() {
         bindRegulator();
         var dto = new com.Zx1nggg.FAMS.modules.regulator.dto.InspectionRecordDTO();
@@ -322,21 +369,19 @@ class LifecycleIntegrationTest {
     }
     @Test void registrationApprovalIsAtomicAndCannotBeRepeated() {
         var app = new com.Zx1nggg.FAMS.modules.system.entity.RegistrationApplication();
-        app.setPhone("test-registration"); app.setUsername("display name"); app.setFarmName("new farm"); app.setFarmProvince("province"); app.setFarmCity("city"); app.setFarmAddress("street");
+        app.setPhone("test-registration"); app.setUsername("display name"); app.setRealName("real name"); app.setFarmName("new farm"); app.setFarmProvince("province"); app.setFarmCity("city"); app.setFarmAddress("street");
         app.setPassword(encoder.encode(UUID.randomUUID().toString())); app.setStatus(0); registrationMapper.insert(app);
         var approval = new com.Zx1nggg.FAMS.modules.system.dto.ApprovalReqDTO(); approval.setStatus(1);
         Long userId = registrations.approveApplication(app.getId(), 99L, approval);
         assertThat(userService.getById(userId).getUsername()).isEqualTo("display name");
-        assertThat(userService.getById(userId).getRealName()).isNull();
-        var profile = new com.Zx1nggg.FAMS.modules.system.dto.UpdateUserProfileDTO(); profile.setRealName("real name");
-        assertThat(userService.updateProfile(userId, profile).getRealName()).isEqualTo("real name");
+        assertThat(userService.getById(userId).getRealName()).isEqualTo("real name");
         assertThat(userService.getById(userId).getFarmId()).isNotNull();
         assertThat(jdbc.queryForObject("SELECT address FROM t_farm WHERE id=?", String.class, userService.getById(userId).getFarmId())).isEqualTo("province city street");
         assertThatThrownBy(() -> registrations.approveApplication(app.getId(), 99L, approval)).isInstanceOf(BusinessException.class);
         assertThat(userService.count()).isEqualTo(1);
     }
     @Test void registrationFarmInsertFailureRollsBackUserCreation() {
-        var app = new com.Zx1nggg.FAMS.modules.system.entity.RegistrationApplication(); app.setPhone("test-registration"); app.setUsername("display name"); app.setFarmName("rejected farm"); app.setStatus(0);
+        var app = new com.Zx1nggg.FAMS.modules.system.entity.RegistrationApplication(); app.setPhone("test-registration"); app.setUsername("display name"); app.setRealName("real name"); app.setFarmName("rejected farm"); app.setStatus(0);
         app.setPassword(encoder.encode(UUID.randomUUID().toString())); registrationMapper.insert(app);
         jdbc.execute("ALTER TABLE t_farm ADD CONSTRAINT reject_farm CHECK(farm_name <> 'rejected farm')");
         var approval = new com.Zx1nggg.FAMS.modules.system.dto.ApprovalReqDTO(); approval.setStatus(1);
@@ -345,7 +390,7 @@ class LifecycleIntegrationTest {
     }
     @Test void pendingRegistrationIsUniqueButRejectedHistoryIsRetained() {
         var dto = new com.Zx1nggg.FAMS.modules.system.dto.RegistrationReqDTO();
-        dto.setPhone("13900008888"); dto.setPassword(UUID.randomUUID().toString()); dto.setUsername("test user"); dto.setFarmName("test");
+        dto.setPhone("13900008888"); dto.setPassword(UUID.randomUUID().toString()); dto.setUsername("test user"); dto.setRealName("real name"); dto.setFarmName("test");
         registrations.submitApplication(dto);
         assertThatThrownBy(() -> registrations.submitApplication(dto)).isInstanceOf(BusinessException.class);
         var app = registrations.list().getFirst();
@@ -360,10 +405,11 @@ class LifecycleIntegrationTest {
     @Test void registrationDetailsRequireTheLatestApplicationPassword() {
         String password = UUID.randomUUID().toString();
         var dto = new com.Zx1nggg.FAMS.modules.system.dto.RegistrationReqDTO(); dto.setPhone("13900007777"); dto.setPassword(password);
-        dto.setUsername("display name"); dto.setFarmName("private farm"); registrations.submitApplication(dto);
+        dto.setUsername("display name"); dto.setRealName("private name"); dto.setFarmName("private farm"); registrations.submitApplication(dto);
         assertThatThrownBy(() -> registrations.queryStatusByPhone(dto.getPhone(), "incorrect")).isInstanceOf(BusinessException.class);
         assertThatThrownBy(() -> registrations.queryStatusByPhone("13900006666", password)).isInstanceOf(BusinessException.class);
         assertThat(registrations.queryStatusByPhone(dto.getPhone(), password).getUsername()).isEqualTo("display name");
+        assertThat(registrations.queryStatusByPhone(dto.getPhone(), password).getRealName()).isEqualTo("private name");
         var rejected = new com.Zx1nggg.FAMS.modules.system.dto.ApprovalReqDTO(); rejected.setStatus(2); rejected.setReviewComment("review detail");
         registrations.approveApplication(registrations.list().getFirst().getId(), 99L, rejected);
         assertThat(registrations.queryStatusByPhone(dto.getPhone(), password).getReviewComment()).isEqualTo("review detail");

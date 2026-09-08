@@ -71,15 +71,16 @@ public class PurchaseBatchServiceImpl extends ServiceImpl<PurchaseBatchMapper, P
     @Override
     @org.springframework.transaction.annotation.Transactional
     public PurchaseBatchVO create(PurchaseBatchDTO dto) {
-        validateReferences(dto);
-        if (dto.getBatchStatus() == null) dto.setBatchStatus((byte) 0);
-        if (dto.getBatchStatus() != 0 && dto.getBatchStatus() != 1) {
-            throw new BusinessException(400, "新增采购只能为待检疫或已检疫入库");
-        }
+        validateReferences(dto, true);
         PurchaseBatch batch = new PurchaseBatch();
         BeanUtils.copyProperties(dto, batch);
         batch.setFarmId(resolveFarmId(dto.getFarmId()));
         batch.setBatchNo(generateBatchNo());
+        // 采购登记不能自行声明检疫通过，状态只能由监管审核接口推进。
+        batch.setBatchStatus((byte) 0);
+        batch.setQuarantineCertNo(null);
+        batch.setQuarantineReviewerId(null);
+        batch.setQuarantineReviewedAt(null);
         batch.setEstimatedTotalQty(calcTotalQty(dto.getUnitQty(), dto.getDensityPerUnit()));
         batch.setTotalAmount(calcTotalAmount(dto.getUnitQty(), dto.getUnitPrice()));
         save(batch);
@@ -95,31 +96,59 @@ public class PurchaseBatchServiceImpl extends ServiceImpl<PurchaseBatchMapper, P
         }
         checkFarmAccess(batch);
         assertBatchNotHarvested(batch);
-        validateReferences(dto);
+        validateReferences(dto, batch.getBatchStatus() == null || batch.getBatchStatus() == 0);
         if (dto.getBatchNo() != null && !dto.getBatchNo().equals(batch.getBatchNo())) {
             throw new BusinessException(400, "批次号不可变更");
         }
-        if (batch.getBatchStatus() != null && batch.getBatchStatus() == 2) {
-            if (!java.util.Objects.equals(dto.getBatchStatus(), batch.getBatchStatus())
-                    || !java.util.Objects.equals(dto.getUnitQty(), batch.getUnitQty())
+        if (batch.getBatchStatus() != null && batch.getBatchStatus() >= 1) {
+            if (!java.util.Objects.equals(dto.getUnitQty(), batch.getUnitQty())
                     || !java.util.Objects.equals(dto.getDensityPerUnit(), batch.getDensityPerUnit())
                     || !java.util.Objects.equals(dto.getSeedlingId(), batch.getSeedlingId())
+                    || !java.util.Objects.equals(dto.getSupplierId(), batch.getSupplierId())
+                    || !java.util.Objects.equals(dto.getPurchaseUnit(), batch.getPurchaseUnit())
                     || !java.util.Objects.equals(dto.getPurchaseDate(), batch.getPurchaseDate())
-                    || (dto.getUnitPrice() == null ? batch.getUnitPrice() != null
-                        : batch.getUnitPrice() == null || dto.getUnitPrice().compareTo(batch.getUnitPrice()) != 0)
                     || !java.util.Objects.equals(resolveFarmId(dto.getFarmId()), batch.getFarmId())) {
-                throw new BusinessException(400, "投放后不可修改批次状态、数量、密度、苗种、养殖场、采购日期或单价");
+                throw new BusinessException(400, "检疫通过后不可修改供应商、苗种、数量、规格、养殖场或采购日期");
             }
-        } else if (dto.getBatchStatus() == null || dto.getBatchStatus() < 0 || dto.getBatchStatus() > 1) {
-            throw new BusinessException(400, "养殖中和已出库状态由投放、出塘流程更新");
         }
         String batchNo = batch.getBatchNo();
+        Byte batchStatus = batch.getBatchStatus();
+        String quarantineCertNo = batch.getQuarantineCertNo();
         BeanUtils.copyProperties(dto, batch);
         batch.setBatchNo(batchNo);
+        // 任意普通编辑请求都不能改写监管审核结果。
+        batch.setBatchStatus(batchStatus);
+        batch.setQuarantineCertNo(quarantineCertNo);
         batch.setId(id);
         batch.setFarmId(resolveFarmId(dto.getFarmId()));
         batch.setEstimatedTotalQty(calcTotalQty(dto.getUnitQty(), dto.getDensityPerUnit()));
         batch.setTotalAmount(calcTotalAmount(dto.getUnitQty(), dto.getUnitPrice()));
+        updateById(batch);
+        return toVO(batch);
+    }
+
+    @Override
+    @org.springframework.transaction.annotation.Transactional
+    public PurchaseBatchVO approveQuarantine(Long id, String quarantineCertNo) {
+        if (!SecurityUtils.isRegulator() && !SecurityUtils.isAdmin()) {
+            throw new BusinessException(403, "仅监管方可执行苗种检疫审核");
+        }
+        PurchaseBatch batch = baseMapper.selectForUpdate(id);
+        if (batch == null) return null;
+        if (batch.getBatchStatus() == null || batch.getBatchStatus() != 0) {
+            throw new BusinessException(400, "仅待检疫批次可签发检疫合格证明");
+        }
+        if (supplierMapper.countSeedlingOffering(batch.getSupplierId(), batch.getSeedlingId()) == 0) {
+            throw new BusinessException(400, "该供应商已不再供应本批次苗种，不能通过检疫审核");
+        }
+        String certNo = quarantineCertNo == null ? null : quarantineCertNo.trim();
+        if (certNo == null || certNo.isEmpty()) {
+            throw new BusinessException(400, "检疫合格证号不能为空");
+        }
+        batch.setQuarantineCertNo(certNo);
+        batch.setQuarantineReviewerId(SecurityUtils.getCurrentUserId());
+        batch.setQuarantineReviewedAt(LocalDateTime.now());
+        batch.setBatchStatus((byte) 1);
         updateById(batch);
         return toVO(batch);
     }
@@ -164,6 +193,10 @@ public class PurchaseBatchServiceImpl extends ServiceImpl<PurchaseBatchMapper, P
                 vo.setSeedlingName(seedling.getCategoryName());
             }
         }
+        if (batch.getFarmId() != null) {
+            com.Zx1nggg.FAMS.modules.base.entity.Farm farm = farmMapper.selectById(batch.getFarmId());
+            if (farm != null) vo.setFarmName(farm.getFarmName());
+        }
         return vo;
     }
 
@@ -191,7 +224,7 @@ public class PurchaseBatchServiceImpl extends ServiceImpl<PurchaseBatchMapper, P
         return unitQty * densityPerUnit;
     }
 
-    private void validateReferences(PurchaseBatchDTO dto) {
+    private void validateReferences(PurchaseBatchDTO dto, boolean requireCurrentOffering) {
         if (farmMapper.selectById(resolveFarmId(dto.getFarmId())) == null) {
             throw new BusinessException(404, "养殖场不存在");
         }
@@ -200,8 +233,8 @@ public class PurchaseBatchServiceImpl extends ServiceImpl<PurchaseBatchMapper, P
         }
         SeedlingDict seedling = dto.getSeedlingId() == null ? null : seedlingDictMapper.selectForUpdate(dto.getSeedlingId());
         if (seedling == null) throw new BusinessException(404, "苗种不存在");
-        if (SecurityUtils.isFarmer() && !java.util.Objects.equals(seedling.getUserId(), SecurityUtils.getCurrentUserId())) {
-            throw new BusinessException(403, "无权使用其他用户的苗种字典");
+        if (requireCurrentOffering && supplierMapper.countSeedlingOffering(dto.getSupplierId(), dto.getSeedlingId()) == 0) {
+            throw new BusinessException(400, "所选供应商未登记供应该苗种，请从供应商的可供应品种中选择");
         }
     }
 

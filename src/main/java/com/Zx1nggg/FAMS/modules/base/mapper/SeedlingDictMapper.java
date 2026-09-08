@@ -14,7 +14,7 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 public interface SeedlingDictMapper extends BaseMapper<SeedlingDict> {
     @org.apache.ibatis.annotations.Select("SELECT * FROM t_seedling_dict WHERE id=#{id} FOR UPDATE")
     SeedlingDict selectForUpdate(@org.apache.ibatis.annotations.Param("id") Long id);
-    @org.apache.ibatis.annotations.Select("SELECT (SELECT COUNT(*) FROM t_purchase_batch WHERE seedling_id=#{id}) + (SELECT COUNT(*) FROM t_sop_template WHERE category_id=#{id})")
+    @org.apache.ibatis.annotations.Select("SELECT (SELECT COUNT(*) FROM t_purchase_batch WHERE seedling_id=#{id}) + (SELECT COUNT(*) FROM t_sop_template WHERE category_id=#{id}) + (SELECT COUNT(*) FROM t_supplier_seedling WHERE seedling_id=#{id})")
     long countReferences(@org.apache.ibatis.annotations.Param("id") Long id);
 
 }

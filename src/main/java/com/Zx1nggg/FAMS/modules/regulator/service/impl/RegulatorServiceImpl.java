@@ -493,6 +493,7 @@ public class RegulatorServiceImpl implements IRegulatorService {
         purchase.put("单价", batch.getUnitPrice() == null ? "-" : batch.getUnitPrice() + " 元/" + safe(batch.getPurchaseUnit()));
         purchase.put("总金额", batch.getTotalAmount() == null ? "-" : batch.getTotalAmount() + " 元");
         purchase.put("检疫证号", batch.getQuarantineCertNo());
+        purchase.put("检疫审核时间", batch.getQuarantineReviewedAt());
         purchase.put("批次状态", batchStatusLabel(batch.getBatchStatus()));
         nodes.add(traceNode("purchase", "苗种采购", batch.getPurchaseDate() == null ? null : batch.getPurchaseDate().atStartOfDay(), purchase));
 

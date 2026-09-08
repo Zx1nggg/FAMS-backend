@@ -77,9 +77,12 @@ try {
     $pondA = Send-TestApi 'Post' '/base/pond' @{ farmId=$farm.id; pondName='A'; areaMu=2 }
     $pondB = Send-TestApi 'Post' '/base/pond' @{ farmId=$farm.id; pondName='B'; areaMu=3 }
     $seedling = Send-TestApi 'Post' '/base/seedling-dict' @{ categoryName='Smoke seedling'; growthCycleDays=100 }
-    $supplier = Send-TestApi 'Post' '/base/supplier' @{ supplierName='Smoke supplier' }
+    $supplier = Send-TestApi 'Post' '/base/supplier' @{ supplierName='Smoke supplier'; seedlingIds=@($seedling.id) }
     $template = Send-TestApi 'Post' '/base/sop-template' @{ categoryId=$seedling.id; stageName='start'; dayOffset=1; taskType='TEST'; taskDesc='smoke task' }
-    $batch = Send-TestApi 'Post' '/base/purchase-batch' @{ farmId=$farm.id; supplierId=$supplier.id; seedlingId=$seedling.id; purchaseUnit='box'; unitQty=10; densityPerUnit=100; unitPrice=100; batchStatus=1; purchaseDate='2026-01-01' }
+    $batch = Send-TestApi 'Post' '/base/purchase-batch' @{ farmId=$farm.id; supplierId=$supplier.id; seedlingId=$seedling.id; purchaseUnit='box'; unitQty=10; densityPerUnit=100; unitPrice=100; batchStatus=1; quarantineCertNo='FORGED'; purchaseDate='2026-01-01' }
+    if ($batch.batchStatus -ne 0 -or $null -ne $batch.quarantineCertNo) { throw 'Farmer-controlled purchase fields must not self-approve quarantine' }
+    $batch = Send-TestApi 'Put' ("/regulator/purchase-batches/" + $batch.id + '/quarantine-approval') @{ quarantineCertNo='SMOKE-QC-001' }
+    if ($batch.batchStatus -ne 1 -or $batch.quarantineCertNo -ne 'SMOKE-QC-001') { throw 'Regulator quarantine approval failed' }
     $stockA = Send-TestApi 'Post' '/base/stocking' @{ batchId=$batch.id; pondId=$pondA.id; stockedUnits=4; stockingDate='2026-01-02' }
     $stockB = Send-TestApi 'Post' '/base/stocking' @{ batchId=$batch.id; pondId=$pondB.id; stockedUnits=6; stockingDate='2026-01-02' }
     $taskPage = Send-TestApi 'Get' ("/lifecycle/pond-task/list?batchNo=" + $batch.batchNo) $null
@@ -100,19 +103,15 @@ try {
     Write-Output 'PASS real MySQL inspection and rectification workflow'
     $applicationPassword = [guid]::NewGuid().ToString('N')
     $applicationPhone = '13900008888'
-    $submitted = Send-TestApi 'Post' '/auth/register' @{ phone=$applicationPhone; password=$applicationPassword; username='Smoke applicant'; farmName='Applicant farm' }
+    $submitted = Send-TestApi 'Post' '/auth/register' @{ phone=$applicationPhone; password=$applicationPassword; username='Smoke applicant'; realName='Smoke real name'; farmName='Applicant farm' }
     $applicationStatus = Send-TestApi 'Post' '/auth/registration-status' @{ phone=$applicationPhone; password=$applicationPassword }
-    if ($applicationStatus.username -ne 'Smoke applicant' -or $applicationStatus.status -ne 0) { throw 'Verified application query failed' }
+    if ($applicationStatus.username -ne 'Smoke applicant' -or $applicationStatus.realName -ne 'Smoke real name' -or $applicationStatus.status -ne 0) { throw 'Verified application query failed' }
     $wrongPasswordBody = @{ phone=$applicationPhone; password=[guid]::NewGuid().ToString('N') } | ConvertTo-Json
     Assert-Code (Invoke-RestMethod 'http://127.0.0.1:18080/api/auth/registration-status' -Method Post -ContentType 'application/json' -Body $wrongPasswordBody) 401 'application credentials rejected'
     Assert-Code (Invoke-RestMethod ("http://127.0.0.1:18080/api/auth/registration-status?phone=" + $applicationPhone)) 405 'phone-only query removed'
     $approval = Send-TestApi 'Put' ("/admin/registrations/" + $applicationStatus.id + '/approve') @{ status=1 }
     $farmerLogin = @{ phone=$applicationPhone; password=$applicationPassword } | ConvertTo-Json
     Assert-Code (Invoke-RestMethod 'http://127.0.0.1:18080/api/auth/login' -Method Post -ContentType 'application/json' -Body $farmerLogin -SessionVariable farmerSession) 200 'approved farmer login'
-    $profileBody = @{ realName='Smoke real name' } | ConvertTo-Json
-    $farmerProfileResponse = Invoke-RestMethod 'http://127.0.0.1:18080/api/user/profile' -Method Put -ContentType 'application/json' -Body $profileBody -WebSession $farmerSession
-    Assert-Code $farmerProfileResponse 200 'post-login real-name update'
-    if ($farmerProfileResponse.data.realName -ne 'Smoke real name') { throw 'Post-login real-name update failed' }
     Assert-Code (Invoke-RestMethod 'http://127.0.0.1:18080/api/user/profile' -WebSession $farmerSession) 200 'farmer profile'
     Assert-Code (Invoke-RestMethod 'http://127.0.0.1:18080/api/user/list' -WebSession $farmerSession) 403 'farmer admin endpoint denied'
     Assert-Code (Invoke-RestMethod ("http://127.0.0.1:18080/api/base/pond/" + $pondA.id) -WebSession $farmerSession) 403 'farmer foreign pond denied'

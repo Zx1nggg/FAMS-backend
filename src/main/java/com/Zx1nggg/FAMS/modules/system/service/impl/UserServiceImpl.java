@@ -51,10 +51,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         User user = getById(userId);
         if (user == null) return null;
         boolean phoneChanged = dto.getPhone() != null && !Objects.equals(dto.getPhone(), user.getPhone());
-        if (dto.getRealName() != null) {
-            dto.setRealName(dto.getRealName().trim());
-            user.setRealName(dto.getRealName());
-        }
+        if (dto.getRealName() != null) user.setRealName(dto.getRealName());
         if (dto.getPhone() != null && !Objects.equals(dto.getPhone(), user.getPhone())
                 && count(new LambdaQueryWrapper<User>().eq(User::getPhone, dto.getPhone()).ne(User::getId, userId)) > 0) {
             throw new BusinessException(400, "手机号已被使用");

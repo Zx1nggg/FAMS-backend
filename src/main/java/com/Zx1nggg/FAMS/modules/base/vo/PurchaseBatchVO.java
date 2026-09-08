@@ -4,11 +4,13 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Data
 public class PurchaseBatchVO {
     private Long id;
     private Long farmId;
+    private String farmName;
     private String batchNo;
     private Long supplierId;
     private String supplierName;
@@ -20,6 +22,8 @@ public class PurchaseBatchVO {
     private Integer estimatedTotalQty;
     private Byte batchStatus;
     private String quarantineCertNo;
+    private Long quarantineReviewerId;
+    private LocalDateTime quarantineReviewedAt;
     /** 单价(元/件) */
     private BigDecimal unitPrice;
 

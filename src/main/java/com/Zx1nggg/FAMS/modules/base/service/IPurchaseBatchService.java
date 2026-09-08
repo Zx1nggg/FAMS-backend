@@ -18,5 +18,7 @@ public interface IPurchaseBatchService extends IService<PurchaseBatch> {
 
     PurchaseBatchVO update(Long id, PurchaseBatchDTO dto);
 
+    PurchaseBatchVO approveQuarantine(Long id, String quarantineCertNo);
+
     void batchDelete(List<Long> ids);
 }

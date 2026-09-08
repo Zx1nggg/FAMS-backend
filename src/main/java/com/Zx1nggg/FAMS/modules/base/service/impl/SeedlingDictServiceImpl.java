@@ -14,12 +14,9 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.Objects;
 
 @Service
 public class SeedlingDictServiceImpl extends ServiceImpl<SeedlingDictMapper, SeedlingDict> implements ISeedlingDictService {
-    @org.springframework.beans.factory.annotation.Autowired
-    private com.Zx1nggg.FAMS.modules.system.mapper.UserMapper userMapper;
 
     @Override
     public Page<SeedlingDictVO> pageQuery(Integer pageNum, Integer pageSize, String categoryName) {
@@ -27,10 +24,7 @@ public class SeedlingDictServiceImpl extends ServiceImpl<SeedlingDictMapper, See
         if (categoryName != null && !categoryName.isEmpty()) {
             wrapper.like(SeedlingDict::getCategoryName, categoryName);
         }
-        // 🌟 数据隔离：FARMER 只能看到本农场的苗种字典
-        if (SecurityUtils.isFarmer()) {
-            wrapper.eq(SeedlingDict::getUserId, SecurityUtils.getCurrentUserId());
-        }
+        // 苗种是全局公共目录；农户只能查阅，由监管方/管理员维护。
         wrapper.orderByDesc(SeedlingDict::getId);
         Page<SeedlingDict> page = page(new Page<>(pageNum, pageSize), wrapper);
         return toVOPage(page);
@@ -39,10 +33,6 @@ public class SeedlingDictServiceImpl extends ServiceImpl<SeedlingDictMapper, See
     @Override
     public List<SeedlingDictVO> listAll() {
         LambdaQueryWrapper<SeedlingDict> wrapper = new LambdaQueryWrapper<>();
-        // 🌟 数据隔离：FARMER 只能看到本农场的苗种字典
-        if (SecurityUtils.isFarmer()) {
-            wrapper.eq(SeedlingDict::getUserId, SecurityUtils.getCurrentUserId());
-        }
         wrapper.orderByAsc(SeedlingDict::getCategoryName);
         List<SeedlingDict> list = list(wrapper);
         return list.stream().map(this::toVO).toList();
@@ -52,39 +42,26 @@ public class SeedlingDictServiceImpl extends ServiceImpl<SeedlingDictMapper, See
     public SeedlingDictVO queryById(Long id) {
         SeedlingDict dict = getById(id);
         if (dict == null) return null;
-        // 🌟 数据隔离
-        checkSeedlingAccess(dict);
         return toVO(dict);
     }
 
     @Override
     @org.springframework.transaction.annotation.Transactional
     public SeedlingDictVO create(SeedlingDictDTO dto) {
+        assertCanManage();
         SeedlingDict dict = new SeedlingDict();
         BeanUtils.copyProperties(dto, dict);
-        // 🌟 数据隔离：FARMER 创建时自动绑定本农场
-        if (SecurityUtils.isFarmer()) {
-            dict.setUserId(SecurityUtils.getCurrentUserId());
-        }
-        if (dict.getUserId() != null && userMapper.selectForUpdate(dict.getUserId()) == null) {
-            throw new BusinessException(404, "所属账号不存在");
-        }
         save(dict);
         return toVO(dict);
     }
 
     @Override
     public SeedlingDictVO update(Long id, SeedlingDictDTO dto) {
+        assertCanManage();
         SeedlingDict dict = getById(id);
         if (dict == null) return null;
-        // 🌟 数据隔离
-        checkSeedlingAccess(dict);
         BeanUtils.copyProperties(dto, dict);
         dict.setId(id);
-        // 🌟 数据隔离：FARMER 不能将苗种转给其他农场
-        if (SecurityUtils.isFarmer()) {
-            dict.setUserId(SecurityUtils.getCurrentUserId());
-        }
         updateById(dict);
         return toVO(dict);
     }
@@ -92,31 +69,18 @@ public class SeedlingDictServiceImpl extends ServiceImpl<SeedlingDictMapper, See
     @Override
     @org.springframework.transaction.annotation.Transactional
     public void batchDelete(List<Long> ids) {
+        assertCanManage();
         if (ids == null || ids.isEmpty()) throw new BusinessException(400, "请选择苗种");
         ids.stream().distinct().sorted().forEach(baseMapper::selectForUpdate);
-        // 🌟 数据隔离：FARMER 只能删除自己的苗种字典
-        if (SecurityUtils.isFarmer()) {
-            List<SeedlingDict> dicts = listByIds(ids);
-            Long currentUserId = SecurityUtils.getCurrentUserId();
-            for (SeedlingDict d : dicts) {
-                if (!Objects.equals(d.getUserId(), currentUserId)) {
-                    throw new BusinessException(403, "无权删除苗种字典 ID=" + d.getId());
-                }
-            }
-        }
         for (Long id : ids) {
             if (baseMapper.countReferences(id) > 0) throw new BusinessException(400, "苗种被采购或 SOP 引用，不能删除");
         }
         removeByIds(ids);
     }
 
-    /**
-     * 🌟 数据隔离：校验 FARMER 是否拥有该苗种的操作权限
-     */
-    private void checkSeedlingAccess(SeedlingDict dict) {
-        if (SecurityUtils.isFarmer()
-                && !Objects.equals(dict.getUserId(), SecurityUtils.getCurrentUserId())) {
-            throw new BusinessException(403, "无权操作该苗种字典");
+    private void assertCanManage() {
+        if (!SecurityUtils.isRegulator() && !SecurityUtils.isAdmin()) {
+            throw new BusinessException(403, "苗种公共目录仅允许监管方或管理员维护");
         }
     }
 

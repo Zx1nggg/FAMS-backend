@@ -111,6 +111,7 @@ public class SecurityConfig {
                             .hasAnyRole("ADMIN", "REGULATOR", "FARMER")
                         .requestMatchers("/base/sop-template/**").hasRole("ADMIN")
                         .requestMatchers("/base/supplier/**").hasAnyRole("ADMIN", "REGULATOR")
+                        .requestMatchers("/base/seedling-dict/**").hasAnyRole("ADMIN", "REGULATOR")
                         .requestMatchers("/base/**", "/lifecycle/**").hasAnyRole("ADMIN", "FARMER")
                         .requestMatchers("/log/alarm-record/**").hasAnyRole("ADMIN", "REGULATOR", "FARMER")
                         .requestMatchers("/log/**").hasAnyRole("ADMIN", "FARMER")

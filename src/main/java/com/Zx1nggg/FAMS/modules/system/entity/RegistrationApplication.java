@@ -49,10 +49,10 @@ public class RegistrationApplication implements Serializable {
     private String password;
 
     /**
-     * 历史申请实名；新申请登录后在个人资料中补充
+     * 负责人/法人真实姓名，用于入驻审核
      */
     @TableField("real_name")
-    @Schema(description = "历史申请实名")
+    @Schema(description = "负责人/法人真实姓名")
     private String realName;
 
     /**

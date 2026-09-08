@@ -40,7 +40,7 @@ PowerShell 可用 `Read-Host -MaskInput` 读取密码后赋给相应进程环境
 4. `migration-20260906-inspections.sql`：抽检档案。
 5. `migration-20260906-pond-harvest.sql`：按批次+池塘约束有效出塘记录，保留软删除历史；需要已有出塘金额等历史字段。
 6. `migration-20260907-pending-registration.sql`：待审申请手机号唯一；已拒绝申请允许重提并保留历史。
-7. `migration-20260907-registration-name-fields.sql`：入驻时填写展示昵称，申请表实名改为可空；此脚本可重复执行。
+7. `migration-20260908-supplier-seedlings.sql`：将苗种与供应商改为监管维护的公共目录，删除两表旧 `user_id` 字段，并建立供应商与可供应苗种的核准关系。脚本不会猜测已有供应关系，升级后需由监管方为现有供应商配置品种。
 
 除脚本内显式保护的部分外，增量只执行一次。预检查出现重复/缺关联记录时停止并核对，不删历史来凑约束。旧批次可能提前关闭、旧结算成本可能按全批次计算，脚本列出待核对记录但不自动重写历史状态与金额。旧删除池塘无批次标记，不随农场自动恢复。
 
@@ -50,7 +50,8 @@ PowerShell 可用 `Read-Host -MaskInput` 读取密码后赋给相应进程环境
 - 登录字段为 phone/password；个人资料为 `/api/user/profile`；修改密码 `PUT /api/user/password` 需要 oldPassword/newPassword，成功后旧会话失效。
 - 申请状态查询使用 `POST /api/auth/registration-status`，请求体为 phone/password，以最新申请的密码验证后返回资料与审批意见。旧 GET 查询已关闭；查询失败不清除当前登录会话。
 - FARMER 的选中农场使用 `X-Current-Farm-Id`，后端按数据库实时归属校验；不能以请求 userId/farmId 覆盖身份。
-- 采购状态：0 待检疫、1 入库、2 养殖、3 已出塘。投放及出塘服务维护 2/3 状态。
+- 苗种为监管维护的公共目录；供应商必须配置可供应品种，采购只能选择该供应商目录内的苗种。
+- 采购状态：0 待检疫、1 入库、2 养殖、3 已出塘。采购登记固定进入待检疫；只有监管方可签发检疫证并推进到入库，投放及出塘服务维护 2/3 状态。
 - 同批次每池塘仅一条有效出塘记录；全部已投放池塘出塘后关闭批次。收购方/去向必填。preview 必须传 batchId 和 pondId。
 - 苗种成本按该池塘投放件数/采购总件数分配。投喂成本参考只汇总通过巡塘归属于该批次的记录；未关联批次的公共投喂不自动分摊，结算时人工核对。前端可录入实际成本，金额由后端计算。
 - 抽检 `/api/regulator/inspections`，ADMIN/REGULATOR 管理；整改按 pending→rectifying→rectified→accepted 逐级推进，开始整改后原始档案锁定。

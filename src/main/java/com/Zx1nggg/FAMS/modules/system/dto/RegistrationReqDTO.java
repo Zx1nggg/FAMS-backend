@@ -24,6 +24,10 @@ public class RegistrationReqDTO {
     @Size(min = 2, max = 20, message = "昵称长度需在2-20个字符之间")
     private String username;
 
+    @NotBlank(message = "真实姓名不能为空")
+    @Size(min = 2, max = 50, message = "真实姓名长度需在2-50个字符之间")
+    private String realName;
+
     @jakarta.validation.constraints.Email
     @Size(max = 100)
     private String email;

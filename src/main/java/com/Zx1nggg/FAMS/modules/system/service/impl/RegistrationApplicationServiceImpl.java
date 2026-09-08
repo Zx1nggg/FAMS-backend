@@ -60,6 +60,7 @@ public class RegistrationApplicationServiceImpl
         RegistrationApplication app = new RegistrationApplication();
         app.setUsername(dto.getUsername().trim());
         app.setPassword(passwordEncoder.encode(dto.getPassword())); // BCrypt加密存储
+        app.setRealName(dto.getRealName().trim());
         app.setPhone(dto.getPhone());
         app.setEmail(dto.getEmail());
         app.setFarmName(dto.getFarmName());
@@ -132,6 +133,7 @@ public class RegistrationApplicationServiceImpl
             User user = new User();
             user.setUsername(app.getUsername());
             user.setPassword(app.getPassword()); // 申请时已BCrypt加密
+            user.setRealName(app.getRealName());
             user.setPhone(app.getPhone());
             user.setEmail(app.getEmail());
             user.setUserType("FARMER"); // 入驻申请默认为养殖户
